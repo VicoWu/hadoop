@@ -3029,6 +3029,7 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
     Socket sock = null;
     final int socketTimeout = dfsClientConf.getSocketTimeout();
     try {
+      // 默认情况下，socketFactory的实现类是hadoop.rpc.socket.factory.class.default=StandardSocketFactory
       sock = socketFactory.createSocket();
       NetUtils.connect(sock, addr, getRandomLocalInterfaceAddr(),
           socketTimeout);

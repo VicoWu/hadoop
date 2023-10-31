@@ -367,12 +367,16 @@ class DataXceiver extends Receiver implements Runnable {
               "anything but a UNIX domain socket.");
         }
         if (slotId != null) {
+          // class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl>
           boolean isCached = datanode.data.
               isCached(blk.getBlockPoolId(), blk.getBlockId());
+          // 在registerslot的时候，需要判定是否对slot的archorable置位。如果在缓存中，那么是archorable的，因为
+          // 无论是内存缓存还是pmem缓存，在数据存入进去的时候，都已经做了crc校验
           datanode.shortCircuitRegistry.registerSlot(
               ExtendedBlockId.fromExtendedBlock(blk), slotId, isCached);
           registeredSlotId = slotId;
         }
+        // 假如block是在缓存中，那么这个fis是否是指向缓存的？
         fis = datanode.requestShortCircuitFdsForRead(blk, token, maxVersion);
         Preconditions.checkState(fis != null);
         bld.setStatus(SUCCESS);
@@ -506,7 +510,7 @@ class DataXceiver extends Receiver implements Runnable {
       }
       try {
         shmInfo = datanode.shortCircuitRegistry.
-            createNewMemorySegment(clientName, sock);
+            createNewMemorySegment(clientName, sock);// 创建新的memory segment
         // After calling #{ShortCircuitRegistry#createNewMemorySegment}, the
         // socket is managed by the DomainSocketWatcher, not the DataXceiver.
         releaseSocket();
@@ -520,7 +524,7 @@ class DataXceiver extends Receiver implements Runnable {
             "Failed to create shared file descriptor: " + e.getMessage());
         return;
       }
-      sendShmSuccessResponse(sock, shmInfo);
+      sendShmSuccessResponse(sock, shmInfo); // 把共享内存区域的信息发送给客户端
       success = true;
     } finally {
       if (ClientTraceLog.isInfoEnabled()) {

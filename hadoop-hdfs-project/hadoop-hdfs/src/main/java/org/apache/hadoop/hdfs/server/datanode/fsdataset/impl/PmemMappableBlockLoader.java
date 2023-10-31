@@ -77,6 +77,8 @@ public class PmemMappableBlockLoader extends MappableBlockLoader {
    * @throws IOException   If mapping block fails or checksum fails.
    *
    * @return               The Mappable block.
+   * 方法返回的时候，pmemVolumeManager已经为这个文件创建了一个mapping文件路径，同时将block文件的channel map到了这个文件
+   * 因此，相当于把文件拷贝到了这个pmem cache下面去了
    */
   @Override
   MappableBlock load(long length, FileInputStream blockIn,
@@ -92,8 +94,9 @@ public class PmemMappableBlockLoader extends MappableBlockLoader {
       if (blockChannel == null) {
         throw new IOException("Block InputStream has no FileChannel.");
       }
-      cachePath = pmemVolumeManager.getCachePath(key);
+      cachePath = pmemVolumeManager.getCachePath(key); // 为这个block构建一个唯一的cache path
       cacheFile = new RandomAccessFile(cachePath, "rw");
+      // 这是将block文件map到对应的path的关键调用
       blockChannel.transferTo(0, length, cacheFile.getChannel());
 
       // Verify checksum for the cached data instead of block file.

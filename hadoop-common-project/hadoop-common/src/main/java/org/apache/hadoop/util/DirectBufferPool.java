@@ -68,7 +68,7 @@ public class DirectBufferPool {
         return b;
       }
     }
-
+    // If we didn't have a such a buffer with size, or we have one, but
     return ByteBuffer.allocateDirect(size);
   }
   

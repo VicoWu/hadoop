@@ -35,7 +35,7 @@ import static org.apache.hadoop.hdfs.server.common.HdfsServerConstants.MAX_BLOCK
  * distinguishes contiguous (0) and striped (1) blocks. For a striped block,
  * bits (n+2) to (64-m) represent the ID of its block group, while the last m
  * bits represent its index of the group. The value m is determined by the
- * maximum number of blocks in a group (MAX_BLOCKS_IN_GROUP).
+ * maximum number of blocks in a group (MAX_BLOCKS_IN_GROUP). MAX_BLOCKS_IN_GROUP = 16， 所以m = 4
  *
  * Note that the {@link #nextValue()} methods requires external lock to
  * guarantee IDs have no conflicts.
@@ -46,18 +46,18 @@ public class SequentialBlockGroupIdGenerator extends SequentialNumber {
   private final BlockManager blockManager;
 
   SequentialBlockGroupIdGenerator(BlockManager blockManagerRef) {
-    super(Long.MIN_VALUE);
+    super(Long.MIN_VALUE); // 启动的时候从最小值开始，因此stripped blockId的最高位是1，用来标记block类型为strip, 参考SequentialBlockIdGenerator是continous block的id 分配方式
     this.blockManager = blockManagerRef;
   }
 
-  @Override // NumberGenerator
+  @Override // NumberGenerator 生成下一个group id
   public long nextValue() {
-    skipTo((getCurrentValue() & ~BLOCK_GROUP_INDEX_MASK) + MAX_BLOCKS_IN_GROUP);
+    skipTo((getCurrentValue() & ~BLOCK_GROUP_INDEX_MASK) + MAX_BLOCKS_IN_GROUP); // 始终不动最低的4位，第5位自增1。从这里可以看到，block group id的0-3位永远是0
     // Make sure there's no conflict with existing random block IDs
     final Block b = new Block(getCurrentValue());
     while (hasValidBlockInRange(b)) {
       skipTo(getCurrentValue() + MAX_BLOCKS_IN_GROUP);
-      b.setBlockId(getCurrentValue());
+      b.setBlockId(getCurrentValue()); //不断将currentValue更新为currentValue + MAX_BLOCKS_IN_GROUP
     }
     if (b.getBlockId() >= 0) {
       throw new IllegalStateException("All negative block group IDs are used, "

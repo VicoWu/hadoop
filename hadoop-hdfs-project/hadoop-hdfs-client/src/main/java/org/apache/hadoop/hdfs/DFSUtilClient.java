@@ -725,7 +725,14 @@ public class DFSUtilClient {
     Peer peer = null;
     boolean success = false;
     try {
-      peer = peerFromSocket(s);
+      /**
+        *       if (channel == null) {
+        *         peer = new BasicInetPeer(socket);
+        *       } else {
+        *         peer = new NioInetPeer(socket);
+        *       }
+       */
+      peer = peerFromSocket(s); // 从DFSUtilClient.peerFromSocket()方法可以看到这个TCP链接的peer的实现类
       peer.setReadTimeout(socketTimeoutMs);
       peer.setWriteTimeout(socketTimeoutMs);
       peer = saslClient.peerSend(peer, keyFactory, blockToken, datanodeId);

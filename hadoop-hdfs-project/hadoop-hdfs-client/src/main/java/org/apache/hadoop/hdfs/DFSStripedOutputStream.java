@@ -481,6 +481,10 @@ public class DFSStripedOutputStream extends DFSOutputStream
     return excluded.toArray(new DatanodeInfo[excluded.size()]);
   }
 
+  /**
+   * 在Stripe存里面，block的意思其实是block group
+   * @throws IOException
+   */
   private void allocateNewBlock() throws IOException {
     if (currentBlockGroup != null) {
       for (int i = 0; i < numAllBlocks; i++) {
@@ -494,7 +498,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
         + Arrays.asList(excludedNodes));
 
     // replace failed streamers
-    ExtendedBlock prevBlockGroup = currentBlockGroup;
+    ExtendedBlock prevBlockGroup = currentBlockGroup; // stripe中的block group对应到了传统的block
     if (prevBlockGroup4Append != null) {
       prevBlockGroup = prevBlockGroup4Append;
       prevBlockGroup4Append = null;
@@ -556,6 +560,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
     final int pos = cellBuffers.addTo(index, bytes, offset, len);
     final boolean cellFull = pos == cellSize;
 
+    //  如果是第一个block，或者当前的block group写完了，需要写到一个新的block group，那么就创建一个新的
     if (currentBlockGroup == null || shouldEndBlockGroup()) {
       // the incoming data should belong to a new block. Allocate a new block.
       allocateNewBlock();

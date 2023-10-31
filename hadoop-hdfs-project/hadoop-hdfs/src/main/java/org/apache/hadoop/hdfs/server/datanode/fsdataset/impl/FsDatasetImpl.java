@@ -825,6 +825,7 @@ class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl> {
       info = volumeMap.get(b.getBlockPoolId(), b.getLocalBlock());
     }
 
+    // 如果是内存存储
     if (info != null && info.getVolume().isTransientStorage()) {
       ramDiskReplicaTracker.touch(b.getBlockPoolId(), b.getBlockId());
       datanode.getMetrics().incrRamDiskBlocksReadHits();
@@ -833,6 +834,7 @@ class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl> {
     if (info == null) {
       throw new IOException("No data exists for block " + b);
     }
+    // 创建这个block的InputStream, 这个block有可能在disk上，有可能在cache上
     return getBlockInputStreamWithCheckingPmemCache(info, b, seekOffset);
   }
 
@@ -842,20 +844,26 @@ class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl> {
    */
   private InputStream getBlockInputStreamWithCheckingPmemCache(
       ReplicaInfo info, ExtendedBlock b, long seekOffset) throws IOException {
+    // 只有pmem才有cache path和addr。这个path构建了对于对应的block文件的mmap，因此对这个path的读，就是对对应的block的读
     String cachePath = cacheManager.getReplicaCachePath(
         b.getBlockPoolId(), b.getBlockId());
-    if (cachePath != null) {
+    if (cachePath != null) { //  这个文件已经被缓存在了pmem上了
       long addr = cacheManager.getCacheAddress(
           b.getBlockPoolId(), b.getBlockId());
-      if (addr != -1) {
+      if (addr != -1) { // 这个block处于pmem上，并且返回了地址
         LOG.debug("Get InputStream by cache address.");
+        // 构建了针对DirectByteBuffer的inputstream,  这个DirectByteBuffer对象直接指向了这个pmem缓存的数据区域
         return FsDatasetUtil.getDirectInputStream(
             addr + seekOffset, info.getBlockDataLength() - seekOffset);
       }
+      // 这个文件在pmem上，但是不是NativeMappableBlock, 因此直接创建针对这个path的inputstream，但是其实这个path也是对应的block的mapping文件，
+      // 因此读取这个在pmem上的文件，就是读取的block，从PMemMappableBlockLoader.load中可以看出来
       LOG.debug("Get InputStream by cache file path.");
       return FsDatasetUtil.getInputStreamAndSeek(
           new File(cachePath), seekOffset);
     }
+    // 这个文件不在cache path上，那么直接读取对应的文件。
+    // 对于普通的存放在磁盘上的Block, ReplicaInfo的实现是LocalReplica
     return info.getDataInputStream(seekOffset);
   }
 

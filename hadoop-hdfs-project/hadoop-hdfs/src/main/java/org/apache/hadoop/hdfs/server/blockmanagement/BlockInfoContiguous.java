@@ -61,9 +61,9 @@ public class BlockInfoContiguous extends BlockInfo {
         "reported blk_%s is different from stored blk_%s",
         reportedBlock.getBlockId(), this.getBlockId());
     // find the last null node
-    int lastNode = ensureCapacity(1);
-    setStorageInfo(lastNode, storage);
-    setNext(lastNode, null);
+    int lastNode = ensureCapacity(1); // 可插入位置的三元组的第一个位置，这个位置存放这个block的DatanodeStorageInfo信息
+    setStorageInfo(lastNode, storage); // 把lastnode设置为这个Storage,代表我设置了当前这个BlockInfoContinuous的存储信息
+    setNext(lastNode, null); // 先暂时不设置previous和next的信息
     setPrevious(lastNode, null);
     return true;
   }

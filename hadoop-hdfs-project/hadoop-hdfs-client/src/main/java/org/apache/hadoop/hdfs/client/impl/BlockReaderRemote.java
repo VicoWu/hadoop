@@ -309,7 +309,7 @@ public class BlockReaderRemote implements BlockReader {
     startOffset = -1;
     checksum = null;
     if (peerCache != null && sentStatusCode) {
-      peerCache.put(datanodeID, peer);
+      peerCache.put(datanodeID, peer); // 将peer重新放回到peerCache, 以便重用
     } else {
       peer.close();
     }

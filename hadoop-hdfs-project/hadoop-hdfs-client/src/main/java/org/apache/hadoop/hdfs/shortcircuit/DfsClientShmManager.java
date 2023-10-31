@@ -119,19 +119,20 @@ public class DfsClientShmManager implements Closeable {
      *                      free slot; the slot object otherwise.
      */
     private Slot allocSlotFromExistingShm(ExtendedBlockId blockId) {
-      if (notFull.isEmpty()) {
+      if (notFull.isEmpty()) { //从当前的DfsClientShmManager中没有找到任何一个还有slot位置的DfsClientShm
         return null;
       }
+      //找到一个还有空闲slot的SharedMemory segment
       Entry<ShmId, DfsClientShm> entry = notFull.firstEntry();
       DfsClientShm shm = entry.getValue();
       ShmId shmId = shm.getShmId();
       Slot slot = shm.allocAndRegisterSlot(blockId);
-      if (shm.isFull()) {
+      if (shm.isFull()) { // 最后一个slot被占用
         LOG.trace("{}: pulled the last slot {} out of {}",
             this, slot.getSlotIdx(), shm);
         DfsClientShm removedShm = notFull.remove(shmId);
         Preconditions.checkState(removedShm == shm);
-        full.put(shmId, shm);
+        full.put(shmId, shm); // 已经满了的segment
       } else {
         LOG.trace("{}: pulled slot {} out of {}", this, slot.getSlotIdx(), shm);
       }
@@ -157,14 +158,14 @@ public class DfsClientShmManager implements Closeable {
         throws IOException {
       final DataOutputStream out =
           new DataOutputStream(
-              new BufferedOutputStream(peer.getOutputStream()));
+              new BufferedOutputStream(peer.getOutputStream())); // 基于DomainSocket与本地的DataNode进行通信
       new Sender(out).requestShortCircuitShm(clientName);
       ShortCircuitShmResponseProto resp =
           ShortCircuitShmResponseProto.parseFrom(
-            PBHelperClient.vintPrefixed(peer.getInputStream()));
+            PBHelperClient.vintPrefixed(peer.getInputStream())); // 接收本地DataNode基于DomainSocket发送过来的细腻
       String error = resp.hasError() ? resp.getError() : "(unknown)";
       switch (resp.getStatus()) {
-      case SUCCESS:
+      case SUCCESS: // DataNode为该client成功创建了对应的Segment
         DomainSocket sock = peer.getDomainSocket();
         byte buf[] = new byte[1];
         FileInputStream[] fis = new FileInputStream[1];
@@ -176,6 +177,10 @@ public class DfsClientShmManager implements Closeable {
           throw new IOException("the datanode " + datanode + " failed to " +
               "pass a file descriptor for the shared memory segment.");
         }
+        // 在 DataNode端，DataNode负责创建好对应的SharedMemory,大小为8192B, 此时，
+        // 客户端和DataNode端共享了相同的fd, 这个fd指向了对应的shared memory segment，同时这个segment是
+        // DN通过mmap的方式创建的，对应了内存中的一块区域
+        // shm = new RegisteredShm(clientName, shmId, fis, this);
         try {
           DfsClientShm shm =
               new DfsClientShm(PBHelperClient.convert(resp.getId()),
@@ -223,7 +228,7 @@ public class DfsClientShmManager implements Closeable {
      */
     Slot allocSlot(DomainPeer peer, MutableBoolean usedPeer,
         String clientName, ExtendedBlockId blockId) throws IOException {
-      while (true) {
+      while (true) { // 不断循环等待slot的分配，有可能通过已有slot的释放，有可能通过新的slot的分配
         if (closed) {
           LOG.trace("{}: the DfsClientShmManager has been closed.", this);
           return null;
@@ -233,10 +238,11 @@ public class DfsClientShmManager implements Closeable {
           return null;
         }
         // Try to use an existing slot.
-        Slot slot = allocSlotFromExistingShm(blockId);
-        if (slot != null) {
+        Slot slot = allocSlotFromExistingShm(blockId); // 当前的共享内存还有空闲slot可供分配，则直接拿来分配就行了，无需申请新的共享内存
+        if (slot != null) { //客户端针对这个block的slot已经存在，则直接返回slot
           return slot;
         }
+        // 没有空闲slot
         // There are no free slots.  If someone is loading more slots, wait
         // for that to finish.
         if (loading) {
@@ -248,14 +254,15 @@ public class DfsClientShmManager implements Closeable {
           lock.unlock();
           DfsClientShm shm;
           try {
-            shm = requestNewShm(clientName, peer);
+            // 没有空闲slot，那么需要申请一片新的共享内存，然后再放置这一块slot
+            shm = requestNewShm(clientName, peer); //申请了一个新的segment成功，剩下的交给下一轮循环，从这个segment中取选择slot
             if (shm == null) continue;
             // See #{DfsClientShmManager#domainSocketWatcher} for details
             // about why we do this before retaking the manager lock.
             domainSocketWatcher.add(peer.getDomainSocket(), shm);
             // The DomainPeer is now our responsibility, and should not be
             // closed by the caller.
-            usedPeer.setValue(true);
+            usedPeer.setValue(true); // 这个DomainPeer已经使用过了(这个DomainPeer已经用来申请了Shared Memory, 不需要再使用了)，后面再使用需要创建新的DomainPeer
           } finally {
             lock.lock();
             loading = false;
@@ -410,10 +417,11 @@ public class DfsClientShmManager implements Closeable {
         return null;
       }
       EndpointShmManager shmManager = datanodes.get(datanode);
-      if (shmManager == null) {
+      if (shmManager == null) { // 如果客户端还没有为这个dn创建manager，则创建，否则重用
         shmManager = new EndpointShmManager(datanode);
         datanodes.put(datanode, shmManager);
       }
+      // 一个Manager对象肯定是跟一个datanode绑定的
       return shmManager.allocSlot(peer, usedPeer, clientName, blockId);
     } finally {
       lock.unlock();

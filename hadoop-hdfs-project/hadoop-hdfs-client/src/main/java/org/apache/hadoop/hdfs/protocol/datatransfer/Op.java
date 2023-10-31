@@ -28,17 +28,17 @@ import org.apache.hadoop.classification.InterfaceStability;
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
 public enum Op {
-  WRITE_BLOCK((byte)80),
-  READ_BLOCK((byte)81),
-  READ_METADATA((byte)82),
-  REPLACE_BLOCK((byte)83),
-  COPY_BLOCK((byte)84),
-  BLOCK_CHECKSUM((byte)85),
-  TRANSFER_BLOCK((byte)86),
-  REQUEST_SHORT_CIRCUIT_FDS((byte)87),
-  RELEASE_SHORT_CIRCUIT_FDS((byte)88),
-  REQUEST_SHORT_CIRCUIT_SHM((byte)89),
-  BLOCK_GROUP_CHECKSUM((byte)90),
+  WRITE_BLOCK((byte)80), // 写数据块
+  READ_BLOCK((byte)81), // 读数据块
+  READ_METADATA((byte)82), // 读数据块元数据
+
+  COPY_BLOCK((byte)84), // 拷贝数据块
+  BLOCK_CHECKSUM((byte)85), // 计算数据块的crc校验和
+  TREPLACE_BLOCK((byte)83),RANSFER_BLOCK((byte)86),
+  REQUEST_SHORT_CIRCUIT_FDS((byte)87), // 申请短路读的块文件描述符
+  RELEASE_SHORT_CIRCUIT_FDS((byte)88), // 释放短路读的块文件描述符
+  REQUEST_SHORT_CIRCUIT_SHM((byte)89), // 申请短路读的共享内存块
+  BLOCK_GROUP_CHECKSUM((byte)90), // 请求BlockGroup的checksum(用在Stripped Block，即纠删码中)
   CUSTOM((byte)127);
 
   /** The code for this operation. */

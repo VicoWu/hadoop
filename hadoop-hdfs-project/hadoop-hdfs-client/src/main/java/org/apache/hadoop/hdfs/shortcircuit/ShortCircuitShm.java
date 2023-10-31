@@ -70,14 +70,14 @@ public class ShortCircuitShm {
   /**
    * Calculate the usable size of a shared memory segment.
    * We round down to a multiple of the slot size and do some validation.
-   *
+   * 打开的文件的大小并不一定和slot的大小是对齐的，因此进行对齐操作
    * @param stream The stream we're using.
    * @return       The usable size of the shared memory segment.
    */
   private static int getUsableLength(FileInputStream stream)
       throws IOException {
     int intSize = Ints.checkedCast(stream.getChannel().size());
-    int slots = intSize / BYTES_PER_SLOT;
+    int slots = intSize / BYTES_PER_SLOT; // 每个slot是64 byte，这里的➗是向下取整
     if (slots == 0) {
       throw new IOException("size of shared memory segment was " +
           intSize + ", but that is not enough to hold even one slot.");
@@ -464,8 +464,16 @@ public class ShortCircuitShm {
    *                    any public accessor which returns a FileDescriptor,
    *                    unlike FileInputStream.
    */
+  /**
+   * 这个构造方法会同时发生在客户端 (DfsClientShm)和服务器端的DataNode(RegisteredShm)
+   * 但是其实这个背后的segment是由DN创建的，创建完成以后的fd共享给了Client端
+   * @param shmId
+   * @param stream 一个普通文件的文件输入流
+   * @throws IOException
+   */
   public ShortCircuitShm(ShmId shmId, FileInputStream stream)
         throws IOException {
+    // 下面的代码在客户端和服务器端同时执行
     if (!NativeIO.isAvailable()) {
       throw new UnsupportedOperationException("NativeIO is not available.");
     }
@@ -480,10 +488,12 @@ public class ShortCircuitShm {
     }
     this.shmId = shmId;
     this.mmappedLength = getUsableLength(stream);
+    //客户端和服务器端都把这个文件直接映射到自己的进程内存空间中，避免在读写文件过程中还需要通过内核态，避免数据从文件到内核、内核到用户态的多次拷贝
+    // 可以看到，调用mmap的时候，对应的权限是RW,因为无论是DataNode还是客户端，都将对这段内存进行读和写，实现状态同步
     this.baseAddress = POSIX.mmap(stream.getFD(),
         POSIX.MMAP_PROT_READ | POSIX.MMAP_PROT_WRITE, true, mmappedLength);
-    this.slots = new Slot[mmappedLength / BYTES_PER_SLOT];
-    this.allocatedSlots = new BitSet(slots.length);
+    this.slots = new Slot[mmappedLength / BYTES_PER_SLOT]; // 默认情况下，一个segment可以存放8192  / 64 个slot
+    this.allocatedSlots = new BitSet(slots.length);//默认情况下，所有slot都没有分配
     LOG.trace("creating {}(shmId={}, mmappedLength={}, baseAddress={}, "
         + "slots.length={})", this.getClass().getSimpleName(), shmId,
         mmappedLength, String.format("%x", baseAddress), slots.length);
@@ -529,15 +539,18 @@ public class ShortCircuitShm {
    * This function chooses an empty slot, initializes it, and then returns
    * the relevant Slot object.
    *
+   * 尽管segment的创建是DN完成的，但是slot的创建是客户端来做的
    * @return    The new slot.
    */
   synchronized public final Slot allocAndRegisterSlot(
       ExtendedBlockId blockId) {
+    // 找到第一个空闲slot的位置
     int idx = allocatedSlots.nextClearBit(0);
     if (idx >= slots.length) {
       throw new RuntimeException(this + ": no more slots are available.");
     }
-    allocatedSlots.set(idx, true);
+    allocatedSlots.set(idx, true); // 标记这个slot为已占用
+    // 创建了一个新的slot， 根据这个slot的索引值确定这个slot相对于这个segment的地址偏移
     Slot slot = new Slot(calculateSlotAddress(idx), blockId);
     slot.clear();
     slot.makeValid();
@@ -586,7 +599,7 @@ public class ShortCircuitShm {
           " is already in use.");
     }
     Slot slot = new Slot(calculateSlotAddress(slotIdx), blockId);
-    if (!slot.isValid()) {
+    if (!slot.isValid()) { // 这个slot这时候应该被客户端已经标记为valid了， 参考ShortCircuitShm L555
       throw new InvalidRequestException(this + ": slot " + slotIdx +
           " is not marked as valid.");
     }

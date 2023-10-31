@@ -33,6 +33,7 @@ import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTest
 /**
  * A Datanode has one or more storages. A storage in the Datanode is represented
  * by this class.
+ * 一个DataNodeStorageInfo只对应一个DataNode
  */
 public class DatanodeStorageInfo {
   public static final DatanodeStorageInfo[] EMPTY_ARRAY = {};
@@ -111,6 +112,7 @@ public class DatanodeStorageInfo {
     }
   }
 
+  // 一个DataNodeStorageInfo指的是某一台DN的某个storage
   private final DatanodeDescriptor dn;
   private final String storageID;
   private StorageType storageType;
@@ -258,8 +260,9 @@ public class DatanodeStorageInfo {
     }
 
     // add to the head of the data-node list
+    // 把BlockInfo b 添加到this(DataNodeStorageInfo中去)
     b.addStorage(this, reportedBlock);
-    insertToList(b);
+    insertToList(b);// 设置这个block在this(当前的这个DataNodeStorageInfo)中的信息
     return result;
   }
 
@@ -268,7 +271,7 @@ public class DatanodeStorageInfo {
   }
 
   public void insertToList(BlockInfo b) {
-    blockList = b.listInsert(blockList, this);
+    blockList = b.listInsert(blockList, this); // 把当前节点插入到head的前面
     numBlocks++;
   }
   boolean removeBlock(BlockInfo b) {

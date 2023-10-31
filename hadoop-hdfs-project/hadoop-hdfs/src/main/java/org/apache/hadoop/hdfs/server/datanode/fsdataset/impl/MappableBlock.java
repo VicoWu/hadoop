@@ -40,6 +40,7 @@ public interface MappableBlock extends Closeable {
   /**
    * Get cache address if applicable.
    * Return -1 if not applicable.
+   * 只有NativePmemMappedBlock才有address，PmemMappedBlock和MemoryMappedBlock都没有addr
    */
   long getAddress();
 

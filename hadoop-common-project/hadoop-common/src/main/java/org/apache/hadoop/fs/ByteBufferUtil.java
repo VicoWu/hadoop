@@ -36,12 +36,16 @@ public final class ByteBufferUtil {
    * Determine if a stream can do a byte buffer read via read(ByteBuffer buf)
    */
   private static boolean streamHasByteBufferRead(InputStream stream) {
+    // 如果stream的类型不是ByteBufferReadable， 那么肯定不是ByteBufferRead
     if (!(stream instanceof ByteBufferReadable)) {
       return false;
     }
-    if (!(stream instanceof FSDataInputStream)) {
+    // stream是ByteBufferReadable，但是不是FSDataInputStream
+    //  注意， FSDataInputStream implements ByteBufferReadable
+    if (!(stream instanceof FSDataInputStream)) { // 如果stream的类型不是FSDataInputStream， 那么肯定是ByteBufferRead
       return true;
     }
+    // stream是FSDataInputStream, 底层包裹的stream是ByteBufferReadable就返回true，否则返回false
     return ((FSDataInputStream)stream).getWrappedStream() 
         instanceof ByteBufferReadable;
   }
@@ -70,7 +74,7 @@ public final class ByteBufferUtil {
     maxLength = Math.min(maxLength, buffer.capacity());
     boolean success = false;
     try {
-      if (useDirect) {
+      if (useDirect) { // 是ByteBuffer的stream，直接读取到ByteBuffer里面去
         buffer.clear();
         buffer.limit(maxLength);
         ByteBufferReadable readable = (ByteBufferReadable)stream;
@@ -90,7 +94,7 @@ public final class ByteBufferUtil {
           totalRead += nRead;
         }
         buffer.flip();
-      } else {
+      } else {  // 不是ByteBuffer的stream，读取到array中取
         buffer.clear();
         int nRead = stream.read(buffer.array(),
             buffer.arrayOffset(), maxLength);

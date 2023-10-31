@@ -65,7 +65,8 @@ import org.apache.hadoop.util.ReflectionUtils;
 /**
  * This is a service provider interface for the underlying storage that
  * stores replicas for a data node.
- * The default implementation stores replicas on local drives. 
+ * The default implementation stores replicas on local drives.
+ * 默认实现是 class FsDatasetImpl implements FsDatasetSpi<FsVolumeImpl>
  */
 @InterfaceAudience.Private
 public interface FsDatasetSpi<V extends FsVolumeSpi> extends FSDatasetMBean {

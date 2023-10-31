@@ -180,6 +180,7 @@ public class FsDatasetCache {
     }
     this.revocationPollingMs = confRevocationPollingMs;
 
+    // 只能有一个cache loader, 或者是RAM, 或者是pmem
     this.cacheLoader = MappableBlockLoaderFactory.createCacheLoader(
         this.getDnConf());
     // Both lazy writer and read cache are sharing this statistics.
@@ -220,7 +221,7 @@ public class FsDatasetCache {
   String getReplicaCachePath(String bpid, long blockId) throws IOException {
     if (cacheLoader.isTransientCache() ||
         !isCached(bpid, blockId)) {
-      return null;
+      return null; // 如果系统配置的cache是RAM, 或者虽然是pmem, 但是并没有被缓存起来
     }
     ExtendedBlockId key = new ExtendedBlockId(blockId, bpid);
     return PmemVolumeManager.getInstance().getCachePath(key);
@@ -230,7 +231,7 @@ public class FsDatasetCache {
    * Get cache address on persistent memory for read operation.
    * The cache address comes from PMDK lib function when mapping
    * block to persistent memory.
-   *
+   * 这个方法只有对pmem才会返回一个地址，否则返回一个-1
    * @param bpid    blockPoolId
    * @param blockId blockId
    * @return address
@@ -240,12 +241,12 @@ public class FsDatasetCache {
         !isCached(bpid, blockId)) {
       return -1;
     }
-    if (!(cacheLoader.isNativeLoader())) {
+    if (!(cacheLoader.isNativeLoader())) { // 如果不是native loader，即NativePmemMappedBlockLoader（pmdk library）, 那么返回-1
       return -1;
     }
     ExtendedBlockId key = new ExtendedBlockId(blockId, bpid);
     MappableBlock mappableBlock = mappableBlockMap.get(key).mappableBlock;
-    return mappableBlock.getAddress();
+    return mappableBlock.getAddress(); // 只有NativePmemMappableBlockLoader才有地址
   }
 
   /**
@@ -620,7 +621,7 @@ public class FsDatasetCache {
 
   public synchronized boolean isCached(String bpid, long blockId) {
     ExtendedBlockId block = new ExtendedBlockId(blockId, bpid);
-    Value val = mappableBlockMap.get(block);
+    Value val = mappableBlockMap.get(block); // 这个cache有可能是MemoryMappableBlockLoader, 也有可能是PmemMappableBlockLoader
     return (val != null) && val.state.shouldAdvertise();
   }
 

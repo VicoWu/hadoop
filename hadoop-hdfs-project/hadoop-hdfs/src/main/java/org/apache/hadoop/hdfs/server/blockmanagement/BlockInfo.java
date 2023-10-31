@@ -37,6 +37,8 @@ import static org.apache.hadoop.hdfs.server.namenode.INodeId.INVALID_INODE_ID;
  * maintains 1) the {@link BlockCollection} it is part of, and 2) datanodes
  * where the replicas of the block, or blocks belonging to the erasure coding
  * block group, are stored.
+ * 有了ec以后，BlockInfo的概念就泛化了。在continuous的场景下，一个BlockInfo代表的是一个block， triplets中的每一个三元组就代表了这个block的当前replica、上一个replica和下一个replica的信息
+ * 而在striped场景下，BlockInfo就代表了一个group， triplets中的每一个三元组（尽管是平铺的）就代表了这个cell的上一个cell、当前cell和下一个cell
  */
 @InterfaceAudience.Private
 public abstract class BlockInfo extends Block
@@ -81,14 +83,14 @@ public abstract class BlockInfo extends Block
   public BlockInfo(short size) {
     this.triplets = new Object[3 * size];
     this.bcId = INVALID_INODE_ID;
-    this.replication = isStriped() ? 0 : size;
+    this.replication = isStriped() ? 0 : size; //replication对于stripped是无效信息
   }
 
   public BlockInfo(Block blk, short size) {
     super(blk);
     this.triplets = new Object[3*size];
     this.bcId = INVALID_INODE_ID;
-    this.replication = isStriped() ? 0 : size;
+    this.replication = isStriped() ? 0 : size; // 如果是纠删吗，那么replication是0，否则就是size
   }
 
   public short getReplication() {
@@ -188,6 +190,10 @@ public abstract class BlockInfo extends Block
     return info;
   }
 
+  /**
+   * 这里capacity返回的是triplets.length / 3， 即这个block的总的副本书，即这个block group中physical block的大小而不是这个triplets的长度
+   * @return
+   */
   public int getCapacity() {
     assert this.triplets != null : "BlockInfo is not initialized";
     assert triplets.length % 3 == 0 : "Malformed BlockInfo";
@@ -259,7 +265,7 @@ public abstract class BlockInfo extends Block
    */
   int findStorageInfo(DatanodeStorageInfo storageInfo) {
     int len = getCapacity();
-    for(int idx = 0; idx < len; idx++) {
+    for(int idx = 0; idx < len; idx++) { // 通过遍历的方式找到当前的storageInfo的index
       DatanodeStorageInfo cur = getStorageInfo(idx);
       if (cur == storageInfo) {
         return idx;
@@ -273,6 +279,8 @@ public abstract class BlockInfo extends Block
    * related to the specified DatanodeStorageInfo.
    * If the head is null then form a new list.
    * @return current block as the new head of the list.
+   *
+   * 根据当前的这个this(block)所载的DataNodeBlockInfo所维护的BlockInfoContinuous链表的头节点head，把this(block)的pre和next插入进去
    */
   BlockInfo listInsert(BlockInfo head, DatanodeStorageInfo storage) {
     int dnIndex = this.findStorageInfo(storage);
@@ -280,9 +288,9 @@ public abstract class BlockInfo extends Block
     assert getPrevious(dnIndex) == null && getNext(dnIndex) == null :
         "Block is already in the list and cannot be inserted.";
     this.setPrevious(dnIndex, null);
-    this.setNext(dnIndex, head);
+    this.setNext(dnIndex, head); // next节点就是head
     if (head != null) {
-      head.setPrevious(head.findStorageInfo(storage), this);
+      head.setPrevious(head.findStorageInfo(storage), this);// 把head节点的pre设置为当前的BlockInfoContinous节点
     }
     return this;
   }

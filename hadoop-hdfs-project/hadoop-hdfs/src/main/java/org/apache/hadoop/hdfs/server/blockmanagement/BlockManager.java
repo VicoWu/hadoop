@@ -1039,6 +1039,12 @@ public class BlockManager implements BlockStatsMXBean {
     return minReplication;
   }
 
+  /**
+   * 如果是stripped，那么最小的storageNum就是一个block中一个stripe的data unit的数量(不包含parity unit的数量)
+   * 如果是continuous, 那么就是最小副本数量
+   * @param block
+   * @return
+   */
   public short getMinStorageNum(BlockInfo block) {
     switch(block.getBlockType()) {
     case STRIPED: return ((BlockInfoStriped) block).getRealDataBlockNum();
@@ -1422,6 +1428,7 @@ public class BlockManager implements BlockStatsMXBean {
     if (blk.isStriped()) {
       BlockInfoStriped sblk = (BlockInfoStriped) blk;
       isCorrupt = numCorruptReplicas != 0 &&
+              // 一个group中的replica的数量已经小于ecSchema中的data unit的数量，这个block已经无法恢复，视为corrupt
           numReplicas.liveReplicas() < sblk.getRealDataBlockNum();
     } else {
       isCorrupt = numCorruptReplicas != 0 && numCorruptReplicas == numNodes;
@@ -3472,6 +3479,7 @@ public class BlockManager implements BlockStatsMXBean {
     }
 
     // add block to the datanode
+    // 将storedBlock 添加到storageInfo对应的队列里面去
     AddBlockResult result = storageInfo.addBlock(storedBlock, reportedBlock);
 
     int curReplicaDelta;
@@ -4324,7 +4332,7 @@ public class BlockManager implements BlockStatsMXBean {
    * striped block group. But note we exclude duplicated internal block replicas
    * for calculating {@link NumberReplicas#liveReplicas}. If the replica on a
    * decommissioning node is the same as the replica on a live node, the
-   * internal block for this replica is live, not decommissioning.
+   * internal block for this replica is live, not decommissioning. // 如果一个replica既在一个live node上，也在一个decommssioning node上，那么这个replica的状态是live, 不是decommission
    */
   public NumberReplicas countNodes(BlockInfo b) {
     return countNodes(b, false);
@@ -4398,11 +4406,11 @@ public class BlockManager implements BlockStatsMXBean {
   private void countReplicasForStripedBlock(NumberReplicas counters,
       BlockInfoStriped block, Collection<DatanodeDescriptor> nodesCorrupt,
       boolean inStartupSafeMode) {
-    BitSet liveBitSet = new BitSet(block.getTotalBlockNum());
+    BitSet liveBitSet = new BitSet(block.getTotalBlockNum());// 这个LogicalBlock中每一个StorageBlock的状态，包含了data unit和parity unit
     BitSet decommissioningBitSet = new BitSet(block.getTotalBlockNum());
-    for (StorageAndBlockIndex si : block.getStorageAndIndexInfos()) {
+    for (StorageAndBlockIndex si : block.getStorageAndIndexInfos()) { // 迭代这个group中的所有的Storage Block
       StoredReplicaState state = checkReplicaOnStorage(counters, block,
-          si.getStorage(), nodesCorrupt, inStartupSafeMode);
+          si.getStorage(), nodesCorrupt, inStartupSafeMode); // 当前这个StorageBlock的状态
       countLiveAndDecommissioningReplicas(counters, state, liveBitSet,
           decommissioningBitSet, si.getBlockIndex());
     }
@@ -4418,20 +4426,21 @@ public class BlockManager implements BlockStatsMXBean {
       BitSet decommissioningBitSet, byte blockIndex) {
     if (state == StoredReplicaState.LIVE) {
       if (!liveBitSet.get(blockIndex)) {
-        liveBitSet.set(blockIndex);
+        liveBitSet.set(blockIndex); // 保存这个live的index的状态
         // Sub decommissioning because the index replica is live.
-        if (decommissioningBitSet.get(blockIndex)) {
+        if (decommissioningBitSet.get(blockIndex)) { // 这个block同时也是decommissioning的状态，那么就从decommissioning中去掉
           counters.subtract(StoredReplicaState.DECOMMISSIONING, 1);
         }
       } else {
-        counters.subtract(StoredReplicaState.LIVE, 1);
+        counters.subtract(StoredReplicaState.LIVE, 1);// live被重复计算了
         counters.add(StoredReplicaState.REDUNDANT, 1);
       }
     } else if (state == StoredReplicaState.DECOMMISSIONING) {
-      if (liveBitSet.get(blockIndex) || decommissioningBitSet.get(blockIndex)) {
+      if (liveBitSet.get(blockIndex) // 如果这个处在decommissioning状态的storage block实际上已经被live的状态统计了，那么就计算在live中，而不是decommissioning中
+              || decommissioningBitSet.get(blockIndex)) {  // 如果已经在decommissioning中统计了
         counters.subtract(StoredReplicaState.DECOMMISSIONING, 1);
       } else {
-        decommissioningBitSet.set(blockIndex);
+        decommissioningBitSet.set(blockIndex); // 这个节点就是decommissioning, 设置decommissioning计数
       }
     }
   }

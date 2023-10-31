@@ -43,8 +43,13 @@ public class DomainSocketFactory {
 
   public enum PathState {
     UNUSABLE(false, false),
+    // 对于shortCircuit read我们disable了，但是也可能使用Domain Socket来进行data transfer,查看disableShortCircuitForPath()方法
+    // 在requestFileDescriptors()中，有可能因为DataNode的某些原因，导致ShortCircuitRead无法成功，这时候就将状态变成SHORT_CIRCUIT_DISABLED, 表示可以使用ShortCircuit用来进行
+    // 数据的传输
     SHORT_CIRCUIT_DISABLED(true, false),
+    // 从这个状态可以看到，只要是shortCircuite，一定是usableForDataTransfer的，但是如果不是shortCircute, 也不一定肯定无法使用domain socket for data transfer
     VALID(true, true);
+
 
     PathState(boolean usableForDataTransfer, boolean usableForShortCircuit) {
       this.usableForDataTransfer = usableForDataTransfer;
@@ -136,7 +141,7 @@ public class DomainSocketFactory {
   public PathInfo getPathInfo(InetSocketAddress addr, ShortCircuitConf conf)
       throws IOException {
     // If there is no domain socket path configured, we can't use domain
-    // sockets.
+    // sockets. 通过dfs.domain.socket.path"配置的
     if (conf.getDomainSocketPath().isEmpty()) return PathInfo.NOT_CONFIGURED;
     // If we can't do anything with the domain socket, don't create it.
     if (!conf.isDomainSocketDataTraffic() &&
@@ -149,14 +154,15 @@ public class DomainSocketFactory {
       return PathInfo.NOT_CONFIGURED;
     }
     // UNIX domain sockets can only be used to talk to local peers
+    // 只有本地才能通信
     if (!DFSUtilClient.isLocalAddress(addr)) return PathInfo.NOT_CONFIGURED;
     String escapedPath = DomainSocket.getEffectivePath(
         conf.getDomainSocketPath(), addr.getPort());
     PathState status = pathMap.getIfPresent(escapedPath);
     if (status == null) {
-      return new PathInfo(escapedPath, PathState.VALID);
+      return new PathInfo(escapedPath, PathState.VALID); //新创建的Path, 状态是VALID
     } else {
-      return new PathInfo(escapedPath, status);
+      return new PathInfo(escapedPath, status); // 从pathMap中取出来的状态
     }
   }
 
@@ -165,6 +171,7 @@ public class DomainSocketFactory {
     boolean success = false;
     DomainSocket sock = null;
     try {
+      // 通过dfs.domain.socket.path来建立连接
       sock = DomainSocket.connect(info.getPath());
       sock.setAttribute(DomainSocket.RECEIVE_TIMEOUT, socketTimeout);
       success = true;

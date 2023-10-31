@@ -673,7 +673,7 @@ public class DFSInputStream extends FSInputStream
       this.currentLocatedBlock = targetBlock;
 
       long offsetIntoBlock = target - targetBlock.getStartOffset();
-
+      // 选择了一个指定节点
       DNAddrPair retval = chooseDataNode(targetBlock, null);
       chosenNode = retval.info;
       InetSocketAddress targetAddr = retval.addr;
@@ -825,6 +825,7 @@ public class DFSInputStream extends FSInputStream
     while (true) {
       // retry as many times as seekToNewSource allows.
       try {
+        // 根据已经创建好的Stratege读取某一个block，这个block所在机器上的blockReader已经创建好了
         return reader.readFromBlock(blockReader, len);
       } catch (ChecksumException ce) {
         DFSClient.LOG.warn("Found Checksum error for "
@@ -881,7 +882,7 @@ public class DFSInputStream extends FSInputStream
           // expired.
           if (pos > blockEnd || currentNode == null
               || updateBlockLocationsStamp()) {
-            currentNode = blockSeekTo(pos);
+            currentNode = blockSeekTo(pos); // seek到指定的DataNode
           }
           int realLen = (int) Math.min(len, (blockEnd - pos + 1L));
           synchronized(infoLock) {
@@ -890,6 +891,7 @@ public class DFSInputStream extends FSInputStream
                   locatedBlocks.getFileLength() - pos);
             }
           }
+          // 进行读取操作
           int result = readBuffer(strategy, realLen, corruptedBlocks);
 
           if (result >= 0) {
@@ -1724,6 +1726,9 @@ public class DFSInputStream extends FSInputStream
   public void readFully(long position, final ByteBuffer buf)
       throws IOException {
     int nread = 0;
+    // 假如position = 0， 文件长度是3， buf的长度是1000
+    // 第一次read(0, buf)
+    // 第二次read(3, buf), 此时返回nbytes=-1, 抛出异常
     while (buf.hasRemaining()) {
       int nbytes = read(position + nread, buf);
       if (nbytes < 0) {
@@ -1837,14 +1842,16 @@ public class DFSInputStream extends FSInputStream
       }
     }
     ByteBuffer buffer = null;
+    // 如果dfs.client.mmap.enabled=true，那么会先尝试进行零拷贝读取
     if (dfsClient.getConf().getShortCircuitConf().isShortCircuitMmapEnabled()) {
       buffer = tryReadZeroCopy(maxLength, opts);
     }
     if (buffer != null) {
       return buffer;
     }
+    // 无法进行zerocopy的copy
     buffer = ByteBufferUtil.fallbackRead(this, bufferPool, maxLength);
-    if (buffer != null) {
+    if (buffer != null) { // 数据已经读取到ByteBuffer中了
       getExtendedReadBuffers().put(buffer, bufferPool);
     }
     return buffer;
@@ -1909,6 +1916,7 @@ public class DFSInputStream extends FSInputStream
     ByteBuffer buffer;
     try {
       seek(curPos + length);
+      // 将原先的mmapByteBuffer转换成当前的一个只读的ByteBuffer
       buffer = clientMmap.getMappedByteBuffer().asReadOnlyBuffer();
       buffer.position((int)blockPos);
       buffer.limit((int)(blockPos + length));

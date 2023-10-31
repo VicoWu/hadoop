@@ -104,6 +104,7 @@ public abstract class MappableBlockLoader {
 
   /**
    * Check whether the cache is non-volatile.
+   * MemoryMappableBlockLoader返回true， PmemMappableBlockLoader返回false
    */
   abstract boolean isTransientCache();
 

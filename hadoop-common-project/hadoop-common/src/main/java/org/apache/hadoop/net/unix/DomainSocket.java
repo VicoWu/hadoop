@@ -405,7 +405,7 @@ public class DomainSocket implements Closeable {
       byte jbuf[], int offset, int length) throws IOException;
 
   /**
-   * Send some FileDescriptor objects to the process on the other side of this
+   * Send some FileDescriptor objects the process on the other side of this
    * socket.
    * 
    * @param descriptors       The file descriptors to send.
@@ -446,8 +446,8 @@ public class DomainSocket implements Closeable {
       int ret = receiveFileDescriptors0(fd, descriptors, buf, offset, length);
       for (int i = 0, j = 0; i < descriptors.length; i++) {
         if (descriptors[i] != null) {
-          streams[j++] = new FileInputStream(descriptors[i]);
-          descriptors[i] = null;
+          streams[j++] = new FileInputStream(descriptors[i]); // 创建对应的FileInputStream用来读取文件
+          descriptors[i] = null; // descriptor置为空
         }
       }
       success = true;
@@ -499,6 +499,7 @@ public class DomainSocket implements Closeable {
       boolean exc = true;
       try {
         byte b[] = new byte[1];
+        // 调用native方法，基于已经建立的DomainSocket连接，将fd(文件描述符对应的打开的文件)中的信息读入到byte数组中，实现通信的接收操作
         int ret = DomainSocket.readArray0(DomainSocket.this.fd, b, 0, 1);
         exc = false;
         return (ret >= 0) ? b[0] : -1;
@@ -556,6 +557,7 @@ public class DomainSocket implements Closeable {
       try {
         byte b[] = new byte[1];
         b[0] = (byte)val;
+        // 基于已经建立的DomainSocket连接，将b中的数据写入到fd(文件描述符对应的打开的文件)实现通信的发送操作
         DomainSocket.writeArray0(DomainSocket.this.fd, b, 0, 1);
         exc = false;
       } finally {

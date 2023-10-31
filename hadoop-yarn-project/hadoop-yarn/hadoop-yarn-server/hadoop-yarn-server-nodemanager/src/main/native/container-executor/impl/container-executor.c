@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
+#include <sys/ioctl.h>
 #include "configuration.h"
 #include "container-executor.h"
 #include "utils/docker-util.h"

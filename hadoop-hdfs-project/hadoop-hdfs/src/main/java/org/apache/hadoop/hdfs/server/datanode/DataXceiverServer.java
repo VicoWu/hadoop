@@ -226,8 +226,8 @@ class DataXceiverServer implements Runnable {
     Peer peer = null;
     while (datanode.shouldRun && !datanode.shutdownForUpgrade) {
       try {
-        peer = peerServer.accept();
-
+        peer = peerServer.accept();// 阻塞等待这个socket上的连接请求，可能来自本机上的一个或者多个客户端
+        // 阻塞结束，说明接受了连接请求
         // Make sure the xceiver count is not exceeded
         int curXceiverCount = datanode.getXceiverCount();
         if (curXceiverCount > maxXceiverCount) {
@@ -235,7 +235,7 @@ class DataXceiverServer implements Runnable {
               + " exceeds the limit of concurrent xcievers: "
               + maxXceiverCount);
         }
-
+        // 开始使用独立线程处理请求
         new Daemon(datanode.threadGroup,
             DataXceiver.create(peer, datanode, this))
             .start();

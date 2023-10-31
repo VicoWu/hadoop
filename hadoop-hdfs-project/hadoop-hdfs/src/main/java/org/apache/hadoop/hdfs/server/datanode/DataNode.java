@@ -1141,7 +1141,7 @@ public class DataNode extends ReconfigurableBase
     // find free port or use privileged port provided
     TcpPeerServer tcpPeerServer;
     if (secureResources != null) {
-      tcpPeerServer = new TcpPeerServer(secureResources);
+      tcpPeerServer = new TcpPeerServer(secureResources); // 基于传统的TCP/IP的PeerServer实现
     } else {
       int backlogLength = getConf().getInt(
           CommonConfigurationKeysPublic.IPC_SERVER_LISTEN_QUEUE_SIZE_KEY,
@@ -1156,10 +1156,11 @@ public class DataNode extends ReconfigurableBase
     streamingAddr = tcpPeerServer.getStreamingAddr();
     LOG.info("Opened streaming server at {}", streamingAddr);
     this.threadGroup = new ThreadGroup("dataXceiverServer");
-    xserver = new DataXceiverServer(tcpPeerServer, getConf(), this);
+    xserver = new DataXceiverServer(tcpPeerServer, getConf(), this); // 创建基于TCP/IP的TcpPeerServer的DataXceiverServer
     this.dataXceiverServer = new Daemon(threadGroup, xserver);
     this.threadGroup.setDaemon(true); // auto destroy when empty
-
+    // 如果配置了shortCircuit读，那么会创建一个单独的Daemon， 封装了一个DataXceiver,这个DataXceiver专门
+    // 处理shortCircuit
     if (getConf().getBoolean(
         HdfsClientConfigKeys.Read.ShortCircuit.KEY,
         HdfsClientConfigKeys.Read.ShortCircuit.DEFAULT) ||
@@ -1167,9 +1168,9 @@ public class DataNode extends ReconfigurableBase
             HdfsClientConfigKeys.DFS_CLIENT_DOMAIN_SOCKET_DATA_TRAFFIC,
             HdfsClientConfigKeys
               .DFS_CLIENT_DOMAIN_SOCKET_DATA_TRAFFIC_DEFAULT)) {
-      DomainPeerServer domainPeerServer =
+      DomainPeerServer domainPeerServer = // 基于DomainSocket的PeerServer实现,这个PeerServer既用于ShortCircuit读，也用于DomainSocket读
                 getDomainPeerServer(getConf(), streamingAddr.getPort());
-      if (domainPeerServer != null) {
+      if (domainPeerServer != null) { // 创建基于DomainSocket的DomainPeerServer的DataXceiverServer
         this.localDataXceiverServer = new Daemon(threadGroup,
             new DataXceiverServer(domainPeerServer, getConf(), this));
         LOG.info("Listening on UNIX domain socket: {}",

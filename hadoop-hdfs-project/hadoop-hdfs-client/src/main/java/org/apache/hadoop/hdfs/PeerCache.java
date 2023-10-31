@@ -47,8 +47,8 @@ public class PeerCache {
   private static final Logger LOG = LoggerFactory.getLogger(PeerCache.class);
 
   private static class Key {
-    final DatanodeID dnID;
-    final boolean isDomain;
+    final DatanodeID dnID; // datanode  id
+    final boolean isDomain; // 是否是 domain socket 的peer，目前有两种peer，基于domain socket的peer和 基于Tcp的peer
 
     Key(DatanodeID dnID, boolean isDomain) {
       this.dnID = dnID;
@@ -153,6 +153,12 @@ public class PeerCache {
     return getInternal(dnId, isDomain);
   }
 
+  /**
+   * 无论是tpc peer还是domain socket peer，都从这里拿
+   * @param dnId
+   * @param isDomain
+   * @return
+   */
   private synchronized Peer getInternal(DatanodeID dnId, boolean isDomain) {
     List<Value> sockStreamList = multimap.get(new Key(dnId, isDomain));
     if (sockStreamList == null) {
@@ -162,17 +168,17 @@ public class PeerCache {
     Iterator<Value> iter = sockStreamList.iterator();
     while (iter.hasNext()) {
       Value candidate = iter.next();
-      iter.remove();
+      iter.remove();// 先把这个Peer从map中摘除出来
       long ageMs = Time.monotonicNow() - candidate.getTime();
       Peer peer = candidate.getPeer();
-      if (ageMs >= expiryPeriod) {
+      if (ageMs >= expiryPeriod) { // 如果这个peer已经超时了， 那么放弃
         try {
           peer.close();
         } catch (IOException e) {
           LOG.warn("got IOException closing stale peer " + peer +
                 ", which is " + ageMs + " ms old");
         }
-      } else if (!peer.isClosed()) {
+      } else if (!peer.isClosed()) { // 如果这个peer还没有超时，同时也并没有close，那么就使用这个peer
         return peer;
       }
     }

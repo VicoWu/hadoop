@@ -254,7 +254,7 @@ class FSDirWriteFileOp {
     // allocate new block, record block locations in INode.
     final BlockType blockType = pendingFile.getBlockType();
     // allocate new block, record block locations in INode.
-    Block newBlock = fsn.createNewBlock(blockType);
+    Block newBlock = fsn.createNewBlock(blockType); // 这个block分配的时候，只是分配了logical blogk id，即只有group ID
     INodesInPath inodesInPath = INodesInPath.fromINode(pendingFile);
     saveAllocatedBlock(fsn, src, inodesInPath, newBlock, targets, blockType);
 

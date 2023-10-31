@@ -721,6 +721,8 @@ public class NamenodeFsck implements DataEncryptionKeyFactory {
     int blockNumber = 0;
     final LocatedBlock lastBlock = blocks.getLastLocatedBlock();
     List<BlockInfo> misReplicatedBlocks = new LinkedList<>();
+    // 对于普通的replication，一个block是由多个相同的replica组成的
+    // 对于ec 模式，一个block指的是一个logical block, 每一个logic block代表了一个文件的顺序的一部分, 每一个logic block被分成了好多的stripe，一个stripe是有几个data unit和几个parity unit组成的
     for (LocatedBlock lBlk : blocks.getLocatedBlocks()) {
       ExtendedBlock block = lBlk.getBlock();
       if (!blocks.isLastBlockComplete() && lastBlock != null &&
@@ -748,6 +750,7 @@ public class NamenodeFsck implements DataEncryptionKeyFactory {
 
       // count total replicas
       int liveReplicas = numberReplicas.liveReplicas();
+      // 正常的replica，正在或者已经完成decommisision的replica，正在进入或者正处于maintenance中的replica
       int totalReplicasPerBlock = liveReplicas + decommissionedReplicas
           + decommissioningReplicas
           + enteringMaintenanceReplicas
@@ -755,10 +758,10 @@ public class NamenodeFsck implements DataEncryptionKeyFactory {
       res.totalReplicas += totalReplicasPerBlock;
 
       boolean isMissing;
-      if (storedBlock.isStriped()) {
-        isMissing = totalReplicasPerBlock < minReplication;
+      if (storedBlock.isStriped()) { // 这里的replica，在stripe的情况下，不包含Parity unit
+        isMissing = totalReplicasPerBlock < minReplication;// minReplication是一个group里面 ecSchema的data unit的数量，如果小于这个数量，那么这个block是吴法恢复的
       } else {
-        isMissing = totalReplicasPerBlock == 0;
+        isMissing = totalReplicasPerBlock == 0; // 对于replication模式，block missing的定义是指这个block的所有replica都不存在
       }
 
       // count expected replicas
@@ -784,6 +787,10 @@ public class NamenodeFsck implements DataEncryptionKeyFactory {
       }
 
       // count corrupt blocks
+      // 关于corrupt的block的判定，查看BlockManager.java L1428
+      // 可以看到， 判断一个block是否是corrupt，是看liveReplica是否已经小于minReplica,
+      // 而判断一个block是否是missing，是看整个的所有replica(live,decommissioning, decommissioned,enteringMaintenanceReplicas, inMaintenanceReplicas)
+      // 是否是小于minReplica
       boolean isCorrupt = lBlk.isCorrupt();
       if (isCorrupt) {
         res.addCorrupt(block.getNumBytes());
@@ -843,6 +850,7 @@ public class NamenodeFsck implements DataEncryptionKeyFactory {
       String blkName = block.toString();
       report.append(blockNumber + ". " + blkName + " len=" +
           block.getNumBytes());
+      //
       if (isMissing && !isCorrupt) {
         // If the block is corrupted, it means all its available replicas are
         // corrupted in the case of replication, and it means the state of the

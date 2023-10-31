@@ -54,7 +54,7 @@ public abstract class SequentialNumber implements IdGenerator {
       if(currentValue.compareAndSet(local, value)) {
         return true;  // swap successful
       }
-      // keep trying
+      // keep tryingzx
     }
   }
 
@@ -64,6 +64,7 @@ public abstract class SequentialNumber implements IdGenerator {
   }
 
   /** Skip to the new value. */
+  // 在NameNode启动的时候，会将这个初始值设置为edit log中的最大值，从而从上一次的位置开始分配值
   public void skipTo(long newValue) throws IllegalStateException {
     for(;;) {
       final long c = getCurrentValue();

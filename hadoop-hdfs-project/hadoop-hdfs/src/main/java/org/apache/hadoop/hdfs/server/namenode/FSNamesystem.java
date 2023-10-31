@@ -2956,7 +2956,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       // This is a retry. Just return the last block.
       return onRetryBlock[0];
     }
-
+    // 先选择合适的DataNode，然后才在storeAllocatedBlock()中创建block ID并把block分配上去
     DatanodeStorageInfo[] targets = FSDirWriteFileOp.chooseTargetForNewBlock(
         blockManager, src, excludedNodes, favoredNodes, flags, r);
 

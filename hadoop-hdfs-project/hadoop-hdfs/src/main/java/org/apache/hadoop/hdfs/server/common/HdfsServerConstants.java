@@ -395,8 +395,8 @@ public interface HdfsServerConstants {
 
   Path MOVER_ID_PATH = new Path("/system/mover.id");
 
-  long BLOCK_GROUP_INDEX_MASK = 15;
-  byte MAX_BLOCKS_IN_GROUP = 16;
+  long BLOCK_GROUP_INDEX_MASK = 15; // 0000 1111
+  byte MAX_BLOCKS_IN_GROUP = 16;  // 0001 0000
   // maximum bandwidth per datanode 1TB/sec.
   long MAX_BANDWIDTH_PER_DATANODE = 1099511627776L;
 }

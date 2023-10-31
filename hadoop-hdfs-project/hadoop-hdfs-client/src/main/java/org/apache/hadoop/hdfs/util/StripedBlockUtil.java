@@ -214,16 +214,16 @@ public class StripedBlockUtil {
     Preconditions.checkArgument(numDataBlocks > 0);
     Preconditions.checkArgument(idxInBlockGroup >= 0);
     // Size of each stripe (only counting data blocks)
-    final int stripeSize = cellSize * numDataBlocks;
+    final int stripeSize = cellSize * numDataBlocks; // 一个Stripe的大小（仅仅考虑data block）
     // If block group ends at stripe boundary, each internal block has an equal
     // share of the group
-    final int lastStripeDataLen = (int)(dataSize % stripeSize);
-    if (lastStripeDataLen == 0) {
+    final int lastStripeDataLen = (int)(dataSize % stripeSize); //最后一个stripe的大小。
+    if (lastStripeDataLen == 0) { // 如果刚好能够整除stripeSize， 那么，所有的block大小都一样，都是dataSize / numDataBlocks
       return dataSize / numDataBlocks;
     }
 
-    final int numStripes = (int) ((dataSize - 1) / stripeSize + 1);
-    return (numStripes - 1L)*cellSize
+    final int numStripes = (int) ((dataSize - 1) / stripeSize + 1); // stripe的数量，当然，最后一个stripe的一部分block比较大，一部分block比较小
+    return (numStripes - 1L)*cellSize // 最后一个stripe的所有block都至少有(numStripes - 1L)*cellSize，但是前一部分的block有最后一个cell，后一部分没有最后一个cell
         + lastCellSize(lastStripeDataLen, cellSize,
         numDataBlocks, idxInBlockGroup);
   }
@@ -251,6 +251,14 @@ public class StripedBlockUtil {
     // such a stripe (and it must be partial).
   }
 
+  /**
+   *
+   * @param size 最后一个stripe的数据大小
+   * @param cellSize 一个cell的大小
+   * @param numDataBlocks dataBlock的数量
+   * @param i 序号
+   * @return
+   */
   private static int lastCellSize(int size, int cellSize, int numDataBlocks,
       int i) {
     if (i < numDataBlocks) {
@@ -261,6 +269,8 @@ public class StripedBlockUtil {
         size = 0;
       }
     }
+    // 比如size = 2.5M, cellSize = 1MB, 那么i 在[0, 1]的时候，size > cellSize, 此时这个index对应的block是一个完整的cell
+    // 如果size < cellSize, 那么这个cell不是一个完整的cell，因此这个block的最后一个stripe的大小其实就是剩余的且小于cellSize的大小
     return size > cellSize? cellSize: size;
   }
 

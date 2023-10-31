@@ -279,7 +279,7 @@ public class ClientContext {
     // resolve its network location, clientNode will be set to null.
     if (clientNode == null) {
       return DFSUtilClient.isLocalAddress(NetUtils.
-          createSocketAddr(datanodeInfo.getXferAddr())) ? 0 :
+          createSocketAddr(datanodeInfo.getXferAddr())) ? 0 : // 如果在同一机器上，distance是0，在不同机器上，distance是MAX_VALUE
           Integer.MAX_VALUE;
     }
     NodeBase node = new NodeBase(datanodeInfo.getHostName(),

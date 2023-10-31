@@ -52,9 +52,10 @@ public class BlockInfoStriped extends BlockInfo {
    */
   private byte[] indices;
 
+  // 从stripped数组的长度可以看出，这个数组里面存放了data 和 parity， 而不仅仅是data了
   public BlockInfoStriped(Block blk, ErasureCodingPolicy ecPolicy) {
     super(blk, (short) (ecPolicy.getNumDataUnits() + ecPolicy.getNumParityUnits()));
-    indices = new byte[ecPolicy.getNumDataUnits() + ecPolicy.getNumParityUnits()];
+    indices = new byte[ecPolicy.getNumDataUnits() + ecPolicy.getNumParityUnits()]; // 一个group中有多少个数据block和多少个校验block
     initIndices();
     this.ecPolicy = ecPolicy;
   }
@@ -77,20 +78,21 @@ public class BlockInfoStriped extends BlockInfo {
 
   /**
    * If the block is committed/completed and its length is less than a full
-   * stripe, it returns the the number of actual data blocks.
+   * stripe, it returns the number of actual data blocks.
    * Otherwise it returns the number of data units specified by erasure coding policy.
+   * 这个方法返回的是真正的数据部分所占用的Storage Block的数量。
    */
   public short getRealDataBlockNum() {
     if (isComplete() || getBlockUCState() == BlockUCState.COMMITTED) {
-      return (short) Math.min(getDataBlockNum(),
-          (getNumBytes() - 1) / ecPolicy.getCellSize() + 1);
+      return (short) Math.min(getDataBlockNum(), // 如果这个block的数据部分所占用的cell的数量大于ecSchema中一个Stripe的cell的总size，那么就是ecschema的data unit的数量
+          (getNumBytes() - 1) / ecPolicy.getCellSize() + 1); // 如果这个block的数据部分所占用的cell的数量小于ecSchema中一个Stripe的cell的总size，那么以实际数量为准
     } else {
       return getDataBlockNum();
     }
   }
 
   public short getRealTotalBlockNum() {
-    return (short) (getRealDataBlockNum() + getParityBlockNum());
+    return (short) (getRealDataBlockNum() + getParityBlockNum()); //真正的总的block数量是指一个logic block中data block和parity block的数量相加
   }
 
   public ErasureCodingPolicy getErasureCodingPolicy() {

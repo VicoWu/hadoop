@@ -276,6 +276,7 @@ public class ShortCircuitReplica {
 
   MappedByteBuffer loadMmapInternal() {
     try {
+      // 将DataNode返回的读取block的dataStream转换成内存的mmap
       FileChannel channel = dataStream.getChannel();
       MappedByteBuffer mmap = channel.map(MapMode.READ_ONLY, 0,
           Math.min(Integer.MAX_VALUE, channel.size()));

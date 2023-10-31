@@ -41,6 +41,7 @@ import org.slf4j.LoggerFactory;
  * unlinking it.  In the constructor, we attempt to clean up after any such
  * remnants by trying to unlink any temporary files created by previous
  * SharedFileDescriptorFactory instances that also used our prefix.
+ * 一个DataNode只会有一个SharedFileDescriptorFactory
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -83,12 +84,12 @@ public class SharedFileDescriptorFactory {
     }
     StringBuilder errors = new StringBuilder();
     String strPrefix = "";
-    for (String path : paths) {
+    for (String path : paths) { // 只要有一个path可以用，就行了
       try {
         FileInputStream fis = 
             new FileInputStream(createDescriptor0(prefix + "test", path, 1));
         fis.close();
-        deleteStaleTemporaryFiles0(prefix, path);
+        deleteStaleTemporaryFiles0(prefix, path); // 尝试创建完毕，再删除掉
         return new SharedFileDescriptorFactory(prefix, path);
       } catch (IOException e) {
         errors.append(strPrefix).append("Error creating file descriptor in ").
@@ -127,7 +128,13 @@ public class SharedFileDescriptorFactory {
    */
   public FileInputStream createDescriptor(String info, int length)
       throws IOException {
-    return new FileInputStream(
+    return new FileInputStream( // 在创建shm的时候，这个info就是clientname, 因此各个client的filename 是不同的
+            /**     参看客户端DFSInputStream的下面的代码，可以看到clientName的构成
+             *     this.clientName = "DFSClient_" + dfsClientConf.getTaskId() + "_" +
+             *         ThreadLocalRandom.current().nextInt()  + "_" +
+             *         Thread.currentThread().getId();
+             */
+            // 这里实际上是创建了一个文件
         createDescriptor0(prefix + info, path, length));
   }
 

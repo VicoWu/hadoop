@@ -429,6 +429,7 @@ abstract public class LocalReplica extends ReplicaInfo {
           getVolume(), f, seekOffset);
     } else {
       try {
+        // 通过普通的方式（RandomAccessFile + seek）打开文件
         fis = fileIoProvider.openAndSeek(getVolume(), f, seekOffset);
       } catch (FileNotFoundException fnfe) {
         throw new IOException("Expected block file at " + f +

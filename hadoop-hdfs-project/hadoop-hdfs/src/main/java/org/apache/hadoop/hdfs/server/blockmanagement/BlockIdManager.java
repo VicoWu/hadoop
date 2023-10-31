@@ -261,7 +261,7 @@ public class BlockIdManager {
   long nextBlockId(BlockType blockType) {
     switch(blockType) {
     case CONTIGUOUS: return blockIdGenerator.nextValue();
-    case STRIPED: return blockGroupIdGenerator.nextValue();
+    case STRIPED: return blockGroupIdGenerator.nextValue(); // 下一个block group id
     default:
       throw new IllegalArgumentException(
           "nextBlockId called with an unsupported BlockType");
@@ -318,7 +318,7 @@ public class BlockIdManager {
 
   public static byte getBlockIndex(Block reportedBlock) {
     return (byte) (reportedBlock.getBlockId() &
-        HdfsServerConstants.BLOCK_GROUP_INDEX_MASK);
+        HdfsServerConstants.BLOCK_GROUP_INDEX_MASK); //  低4位是block index
   }
 
   SequentialBlockGroupIdGenerator getBlockGroupIdGenerator() {

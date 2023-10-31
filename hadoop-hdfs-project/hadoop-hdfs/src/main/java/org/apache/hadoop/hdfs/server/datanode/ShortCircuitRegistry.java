@@ -270,7 +270,7 @@ public class ShortCircuitRegistry {
 
     NewShmInfo(ShmId shmId, FileInputStream stream) {
       this.shmId = shmId;
-      this.stream = stream;
+      this.stream = stream; // 基于文件创建的读数据流
     }
 
     public ShmId getShmId() {
@@ -316,9 +316,14 @@ public class ShortCircuitRegistry {
       FileInputStream fis = null;
       try {
         do {
-          shmId = ShmId.createRandom();
+          shmId = ShmId.createRandom(); //创建一个唯一的ShmID
         } while (segments.containsKey(shmId));
-        fis = shmFactory.createDescriptor(clientName, SHM_LENGTH);
+        /**     参看客户端DFSInputStream的下面的代码，可以看到clientName的构成
+         *     this.clientName = "DFSClient_" + dfsClientConf.getTaskId() + "_" +
+         *         ThreadLocalRandom.current().nextInt()  + "_" +
+         *         Thread.currentThread().getId();
+         */
+        fis = shmFactory.createDescriptor(clientName, SHM_LENGTH);//Create a 8KB shared memory
         shm = new RegisteredShm(clientName, shmId, fis, this);
       } finally {
         if (shm == null) {
@@ -354,9 +359,9 @@ public class ShortCircuitRegistry {
     }
     Slot slot = shm.registerSlot(slotId.getSlotIdx(), blockId);
     if (isCached) {
-      slot.makeAnchorable();
+      slot.makeAnchorable(); // 数据来自缓存，因此标记为 可锚定 状态，客户端不再需要做校验，这里会修改slot对应的共享内存，因此客户端也会感知到
     } else {
-      slot.makeUnanchorable();
+      slot.makeUnanchorable();// 数据来自缓存，因此标记为 不可锚定 状态，客户端不再需要做校验，,这里会修改slot对应的共享内存，因此客户端也会感知到
     }
     boolean added = slots.put(blockId, slot);
     Preconditions.checkState(added);

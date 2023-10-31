@@ -240,6 +240,7 @@ class BlockReaderLocal implements BlockReader {
     this.replica = builder.replica;
     this.dataIn = replica.getDataStream().getChannel();
     this.dataPos = builder.dataPos;
+    //  checksum的信息是从block meta中读取出来的
     this.checksumIn = replica.getMetaStream().getChannel();
     BlockMetadataHeader header = builder.replica.getMetaHeader();
     this.checksum = header.getChecksum();
@@ -247,7 +248,9 @@ class BlockReaderLocal implements BlockReader {
         (this.checksum.getChecksumType().id != DataChecksum.CHECKSUM_NULL);
     this.filename = builder.filename;
     this.block = builder.block;
+    // 多少数据做一次checksum，这里是一个chunk会计算一个checksum
     this.bytesPerChecksum = checksum.getBytesPerChecksum();
+    // 一个checksum的数据的长度，比如crc32的checksum算法，一个checksum是4kb
     this.checksumSize = checksum.getChecksumSize();
 
     this.maxAllocatedChunks = (bytesPerChecksum == 0) ? 0 :
@@ -312,7 +315,7 @@ class BlockReaderLocal implements BlockReader {
     if (checksumBuf != null) {
       checksumBuf.clear();
       bufferPool.returnBuffer(checksumBuf);
-      checksumBuf = null;
+      checksumBuf = null; // 便于垃圾回收
     }
   }
 
@@ -347,8 +350,8 @@ class BlockReaderLocal implements BlockReader {
   private synchronized int fillBuffer(ByteBuffer buf, boolean canSkipChecksum)
       throws IOException {
     int total = 0;
-    long startDataPos = dataPos;
-    int startBufPos = buf.position();
+    long startDataPos = dataPos; // 读取数据的位置
+    int startBufPos = buf.position(); //buf当前插入的坐标
     while (buf.hasRemaining()) {
       int nRead = blockReaderIoProvider.read(dataIn, buf, dataPos);
       if (nRead < 0) {
@@ -357,7 +360,7 @@ class BlockReaderLocal implements BlockReader {
       dataPos += nRead;
       total += nRead;
     }
-    if (canSkipChecksum) {
+    if (canSkipChecksum) { //如果可以不进行checksum校验(只是不校验checksum，不代表数据中没有携带checksum)
       freeChecksumBufIfExists();
       return total;
     }
@@ -373,6 +376,7 @@ class BlockReaderLocal implements BlockReader {
         long checksumPos = BlockMetadataHeader.getHeaderSize()
             + ((startDataPos / bytesPerChecksum) * checksumSize);
         while (checksumBuf.hasRemaining()) {
+          // 将checksum的内容(通过checksumPos这个stream中读到的)从读取到checksumBuf中，
           int nRead = checksumIn.read(checksumBuf, checksumPos);
           if (nRead < 0) {
             throw new IOException("Got unexpected checksum file EOF at " +
@@ -381,8 +385,8 @@ class BlockReaderLocal implements BlockReader {
           }
           checksumPos += nRead;
         }
-        checksumBuf.flip();
-
+        checksumBuf.flip(); // 从写模式转变成读模式
+        // 进行 checksum校验
         checksum.verifyChunkedSums(buf, checksumBuf, filename, startDataPos);
       } finally {
         buf.position(buf.limit());
@@ -392,6 +396,9 @@ class BlockReaderLocal implements BlockReader {
   }
 
   private boolean createNoChecksumContext() {
+    // 客户端通过配置的方式配置为跳过checksum, 或者是临时存储， 或者，如果verifyChecksum为true，同时storagetype不是临时存储，
+    // 那么添加checksum anchor计数。如果计数成功，就返回true，计数失败返回false。
+    // 能否anchor，是在DataNode端通过ShortCircuitRegistry.registerSlot() -》 slot.makeAnchorable()来判断的
     return !verifyChecksum ||
         // Checksums are not stored for replicas on transient storage.  We do
         // not anchor, because we do not intend for client activity to block
@@ -468,15 +475,17 @@ class BlockReaderLocal implements BlockReader {
   private synchronized boolean fillDataBuf(boolean canSkipChecksum)
       throws IOException {
     createDataBufIfNeeded();
+    // 关于checksum，查看BlockSender
+    // 如果bytesPerChecksum = 10,dataPos = 3, 那么slop = 3, 代表现在超出了一个chunk的坐标
     final int slop = (int)(dataPos % bytesPerChecksum);
     final long oldDataPos = dataPos;
     dataBuf.limit(maxReadaheadLength);
     if (canSkipChecksum) {
-      dataBuf.position(slop);
+      dataBuf.position(slop); //dataBuf接着原来的位置写
       fillBuffer(dataBuf, true);
-    } else {
-      dataPos -= slop;
-      dataBuf.position(0);
+    } else { // 需要validate checksum
+      dataPos -= slop;// 回到chunk的边界，即可能会重复读取一些数据
+      dataBuf.position(0);//dataBuf从头开始写
       fillBuffer(dataBuf, false);
     }
     dataBuf.limit(dataBuf.position());
@@ -594,14 +603,14 @@ class BlockReaderLocal implements BlockReader {
   private synchronized int readWithBounceBuffer(byte arr[], int off, int len,
         boolean canSkipChecksum) throws IOException {
     createDataBufIfNeeded();
-    if (!dataBuf.hasRemaining()) {
-      dataBuf.position(0);
-      dataBuf.limit(maxReadaheadLength);
+    if (!dataBuf.hasRemaining()) { // position==limit, 已经不能再写
+      dataBuf.position(0); // 重置databuf
+      dataBuf.limit(maxReadaheadLength); // 再往0 ～ maxReadaheadLength中间写入数据
       fillDataBuf(canSkipChecksum);
     }
-    if (dataBuf.remaining() == 0) return -1;
+    if (dataBuf.remaining() == 0) return -1; // limit和position相同，此时不可读不可写（如果可读，肯定做了flip）
     int toRead = Math.min(dataBuf.remaining(), len);
-    dataBuf.get(arr, off, toRead);
+    dataBuf.get(arr, off, toRead); // 把数据从ByteBuffer传输到arr中
     return toRead;
   }
 
@@ -669,6 +678,7 @@ class BlockReaderLocal implements BlockReader {
    * not to munlock the block until this ClientMmap is closed.
    * If we fetch the latter, we don't bother with anchoring.
    *
+   *
    * @param opts     The options to use, such as SKIP_CHECKSUMS.
    *
    * @return         null on failure; the ClientMmap otherwise.
@@ -677,8 +687,8 @@ class BlockReaderLocal implements BlockReader {
   public ClientMmap getClientMmap(EnumSet<ReadOption> opts) {
     boolean anchor = verifyChecksum &&
         !opts.contains(ReadOption.SKIP_CHECKSUMS);
-    if (anchor) {
-      if (!createNoChecksumContext()) {
+    if (anchor) { // 需要进行数据校验
+      if (!createNoChecksumContext()) { // 创建unanchor_flag失败
         LOG.trace("can't get an mmap for {} of {} since SKIP_CHECKSUMS was not "
             + "given, we aren't skipping checksums, and the block is not "
             + "mlocked.", block, filename);

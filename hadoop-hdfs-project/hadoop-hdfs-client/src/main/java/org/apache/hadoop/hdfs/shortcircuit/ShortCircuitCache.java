@@ -706,7 +706,7 @@ public class ShortCircuitCache implements Closeable {
         Waitable<ShortCircuitReplicaInfo> waitable = replicaInfoMap.get(key);
         if (waitable != null) {
           try {
-            info = fetch(key, waitable);
+            info = fetch(key, waitable); // 对应的block已经有了对应的replicaInfoMap
             break;
           } catch (RetriableException e) {
             LOG.debug("{}: retrying {}", this, e.getMessage());
@@ -720,6 +720,7 @@ public class ShortCircuitCache implements Closeable {
     } finally {
       lock.unlock();
     }
+    // 无法从replicaInfoMap中获取，即对应的block还没有在client-dn之间形成replicaInfoMap，因此申请创建一个
     return create(key, creator, newWaitable);
   }
 
@@ -776,6 +777,13 @@ public class ShortCircuitCache implements Closeable {
     return info;
   }
 
+  /**
+   * 跟datanode通信，创建对应的replicatinfo，包括segment以及对block以及block meta的shared memory的读写
+   * @param key
+   * @param creator
+   * @param newWaitable
+   * @return
+   */
   private ShortCircuitReplicaInfo create(ExtendedBlockId key,
       ShortCircuitReplicaCreator creator,
       Waitable<ShortCircuitReplicaInfo> newWaitable) {
@@ -787,6 +795,7 @@ public class ShortCircuitCache implements Closeable {
     } catch (RuntimeException e) {
       LOG.warn(this + ": failed to load " + key, e);
     }
+    // 新创建的info的replica信息是空的，这时候说明无法通过ShortCircuitRead进行数据读取
     if (info == null) info = new ShortCircuitReplicaInfo();
     lock.lock();
     try {
@@ -832,26 +841,28 @@ public class ShortCircuitCache implements Closeable {
   ClientMmap getOrCreateClientMmap(ShortCircuitReplica replica,
       boolean anchored) {
     Condition newCond;
+    // 对cache进行并发控制，因为一个ShortCircuitCache的lock是被多个replica同时使用的
     lock.lock();
     try {
-      while (replica.mmapData != null) {
-        if (replica.mmapData instanceof MappedByteBuffer) {
+      while (replica.mmapData != null) { //  任何一个replica第一次调用getOrCreateClientMmap的时候，都不会进入while循环
+        if (replica.mmapData instanceof MappedByteBuffer) { // 已经构建了这个ReplicaInfo的mmap，那么直接重用就行
           ref(replica);
           MappedByteBuffer mmap = (MappedByteBuffer)replica.mmapData;
-          return new ClientMmap(replica, mmap, anchored);
+          return new ClientMmap(replica, mmap, anchored);  //直接返回对应的mmap
         } else if (replica.mmapData instanceof Long) {
           long lastAttemptTimeMs = (Long)replica.mmapData;
           long delta = Time.monotonicNow() - lastAttemptTimeMs;
-          if (delta < mmapRetryTimeoutMs) {
+          if (delta < mmapRetryTimeoutMs) { // 如果上次失败的时间距离现在很短，那么直接返回null，表示创建失败
             LOG.trace("{}: can't create client mmap for {} because we failed to"
                 + " create one just {}ms ago.", this, replica, delta);
             return null;
           }
+          // 上次失败的时间已经过去了一段时间了，因此继续循环等待
           LOG.trace("{}: retrying client mmap for {}, {} ms after the previous "
               + "failure.", this, replica, delta);
-        } else if (replica.mmapData instanceof Condition) {
+        } else if (replica.mmapData instanceof Condition) { // 可能前面已经有其他线程在尝试为这个replica构建mmap,此时需要等待
           Condition cond = (Condition)replica.mmapData;
-          cond.awaitUninterruptibly();
+          cond.awaitUninterruptibly(); //
         } else {
           Preconditions.checkState(false, "invalid mmapData type %s",
               replica.mmapData.getClass().getName());
@@ -862,14 +873,15 @@ public class ShortCircuitCache implements Closeable {
     } finally {
       lock.unlock();
     }
-    MappedByteBuffer map = replica.loadMmapInternal();
+    // 任何一个replica第一次进入方法，都会跳过while，直接调用该方法
+    MappedByteBuffer map = replica.loadMmapInternal(); //加载到堆外内存
     lock.lock();
     try {
-      if (map == null) {
-        replica.mmapData = Time.monotonicNow();
+      if (map == null) { // 加载mmap失败
+        replica.mmapData = Time.monotonicNow();// 将mmapData赋值为当前时间
         newCond.signalAll();
         return null;
-      } else {
+      } else { // 已经将DataNode的block文件成功加载成为了mmap
         outstandingMmapCount++;
         replica.mmapData = map;
         ref(replica);
