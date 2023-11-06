@@ -793,6 +793,7 @@ class BPOfferService {
         dxcs.balanceThrottler.setBandwidth(bandwidth);
       }
       break;
+      // 对于continuous block的恢复，参考DatanodeProtocol.DNA_TRANSFER
     case DatanodeProtocol.DNA_ERASURE_CODING_RECONSTRUCTION:
       LOG.info("DatanodeCommand action: DNA_ERASURE_CODING_RECOVERY");
       Collection<BlockECReconstructionInfo> ecTasks =

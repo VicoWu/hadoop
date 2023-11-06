@@ -40,7 +40,7 @@ class ByteBufferDecodingState extends DecodingState {
     this.outputs = outputs;
     this.erasedIndexes = erasedIndexes;
     ByteBuffer validInput = CoderUtil.findFirstValidInput(inputs);
-    this.decodeLength = validInput.remaining();
+    this.decodeLength = validInput.remaining(); // 在读状态下，remaining 就是可读取的数据量
     this.usingDirectBuffer = validInput.isDirect();
 
     checkParameters(inputs, erasedIndexes, outputs);
@@ -114,7 +114,7 @@ class ByteBufferDecodingState extends DecodingState {
 
       validInputs++;
     }
-
+    // 如果input的数量小于data unit的数量，比如，小于RS(6,2)中的6，那么显然无法进行数据恢复
     if (validInputs < decoder.getNumDataUnits()) {
       throw new HadoopIllegalArgumentException(
           "No enough valid inputs are provided, not recoverable");

@@ -195,7 +195,7 @@ public final class CodecUtil {
       try {
         if (rawCoderName != null) {
           RawErasureCoderFactory fact = createRawCoderFactory(
-              rawCoderName, codecName);
+              rawCoderName, codecName); // implements RawErasureCoderFactory
           return fact.createDecoder(coderOptions);
         }
       } catch (LinkageError | Exception e) {

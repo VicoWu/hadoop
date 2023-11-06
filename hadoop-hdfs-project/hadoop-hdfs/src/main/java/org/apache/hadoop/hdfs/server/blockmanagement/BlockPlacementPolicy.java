@@ -70,6 +70,7 @@ public abstract class BlockPlacementPolicy {
    * @param flags Block placement flags.
    * @return array of DatanodeDescriptor instances chosen as target
    * and sorted as a pipeline.
+   * continuous和stripe block对这个方法的实现完全不同
    */
   public abstract DatanodeStorageInfo[] chooseTarget(String srcPath,
                                              int numOfReplicas,

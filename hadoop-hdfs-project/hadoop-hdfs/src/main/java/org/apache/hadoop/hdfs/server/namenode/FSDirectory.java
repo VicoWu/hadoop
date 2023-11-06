@@ -101,6 +101,7 @@ import static org.apache.hadoop.hdfs.server.namenode.snapshot.Snapshot.CURRENT_S
  * FSDirectory is a pure in-memory data structure, all of whose operations
  * happen entirely in memory. In contrast, FSNamesystem persists the operations
  * to the disk.
+ * 一个HDFS只有一个FSDirectory对象和一个FSNamesystem对象
  * @see org.apache.hadoop.hdfs.server.namenode.FSNamesystem
  **/
 @InterfaceAudience.Private
@@ -706,7 +707,7 @@ public class FSDirectory implements Closeable {
       throw new InvalidPathException("Invalid file name: " + src);
     }
 
-    byte[][] components = INode.getPathComponents(src);
+    byte[][] components = INode.getPathComponents(src);//将整个path通过路径分隔符/进行分割，返回成为一个字节数组
     boolean isRaw = isReservedRawName(components);
     if (isPermissionEnabled && pc != null && isRaw) {
       switch(dirOp) {
@@ -754,6 +755,10 @@ public class FSDirectory implements Closeable {
     return INodesInPath.resolve(rootDir, components, isRaw);
   }
 
+  /**
+   * 构建INodesInPath，这个对象包含了一个完整路径中的所有的inode和对应的component的名字
+   * 一个HDFS只有一个FSDirectory对象
+   */
   INodesInPath resolvePath(FSPermissionChecker pc, String src, long fileId)
       throws UnresolvedLinkException, FileNotFoundException,
       AccessControlException, ParentNotDirectoryException {
@@ -765,7 +770,7 @@ public class FSDirectory implements Closeable {
       iip = resolvePath(pc, src, DirOp.WRITE);
     } else {
       INode inode = getInode(fileId);
-      if (inode == null) {
+      if (inode == null) { // 从src path中解析inode
         iip = INodesInPath.fromComponents(INode.getPathComponents(src));
       } else {
         iip = INodesInPath.fromINode(inode);

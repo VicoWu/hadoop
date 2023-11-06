@@ -115,6 +115,12 @@ public class DFSPacket {
     dataPos += len;
   }
 
+  /**
+   * 把inBuffer中的数据写入到Packet中去（注意并不是发送，只是写入到Packet对应的buf中）
+   * @param inBuffer
+   * @param len
+   * @throws ClosedChannelException
+   */
   public synchronized void writeData(ByteBuffer inBuffer, int len)
       throws ClosedChannelException {
     checkBuffer();

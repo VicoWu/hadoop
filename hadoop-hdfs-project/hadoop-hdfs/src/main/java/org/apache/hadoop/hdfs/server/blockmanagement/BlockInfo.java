@@ -54,7 +54,7 @@ public abstract class BlockInfo extends Block
   /**
    * Block collection ID.
    */
-  private volatile long bcId;
+  private volatile long bcId; // 这个block所属于的block collection，比如一个INodeFile就是一个BlockCollection
 
   /** For implementing {@link LightWeightGSet.LinkedElement} interface. */
   private LightWeightGSet.LinkedElement nextLinkedElement;
@@ -403,10 +403,12 @@ public abstract class BlockInfo extends Block
 
   /**
    * Add/Update the under construction feature.
+   * 这个block可能是stripped, 也可能是continuous的block，都是这个方法
+   * 这个方法调用完成，那么个blockInfo中的uc就包含了这个underConstruction的block的location信息
    */
   public void convertToBlockUnderConstruction(BlockUCState s,
       DatanodeStorageInfo[] targets) {
-    if (isComplete()) {
+    if (isComplete()) { // 这个block已经处于COMPLETE的状态，即最后的稳定状态。在COMPLETE状态下，uc=null，这种情况可能发生在block从COMPLETE状态又回到uc的状态
       uc = new BlockUnderConstructionFeature(this, s, targets,
           this.getBlockType());
     } else {

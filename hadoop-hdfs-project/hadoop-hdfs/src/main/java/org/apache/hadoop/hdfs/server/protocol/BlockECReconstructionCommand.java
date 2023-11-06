@@ -69,6 +69,10 @@ public class BlockECReconstructionCommand extends DatanodeCommand {
   }
 
   /** Block and targets pair */
+  /**
+   * 每一个BlockECReconstructionInfo代表了对于一个Internal Block的恢复。但是，一个DN可能会同时有多个恢复任务，因此在一次对DN心跳的response中
+   * ，可能会有一个或者多个BlockECReconstructionInfo（放在一个List中）回复给DN，让DN进行相关的恢复工作
+   */
   @InterfaceAudience.Private
   @InterfaceStability.Evolving
   public static class BlockECReconstructionInfo {

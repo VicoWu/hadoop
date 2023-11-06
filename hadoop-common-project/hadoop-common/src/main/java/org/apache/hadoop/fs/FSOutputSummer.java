@@ -108,7 +108,7 @@ abstract public class FSOutputSummer extends OutputStream implements
     if (off < 0 || len < 0 || off > b.length - len) {
       throw new ArrayIndexOutOfBoundsException();
     }
-
+    // write1返回的是每次写成功的字节数
     for (int n=0;n<len;n+=write1(b, off+n, len-n)) {
     }
   }
@@ -116,23 +116,26 @@ abstract public class FSOutputSummer extends OutputStream implements
   /**
    * Write a portion of an array, flushing to the underlying
    * stream at most once if necessary.
+   * 返回拷贝成功的数据量（因为buf可能不够）
+   * 将b[]中从[off, off+len]中的数据写入到buf中
    */
   private int write1(byte b[], int off, int len) throws IOException {
-    if(count==0 && len>=buf.length) {
+    if(count==0 && len>=buf.length) { // 如果buf中没有数据，并且当前写入数据的长度大于buf，那么，不需要经过buf，直接开始生成chunk
       // local buffer is empty and user buffer size >= local buffer size, so
       // simply checksum the user buffer and send it directly to the underlying
       // stream
       final int length = buf.length;
-      writeChecksumChunks(b, off, length);
+      writeChecksumChunks(b, off, length);// 最终调用DFSStripedOutputStream或者DFSOutputStream的writeChecksumChunks
       return length;
     }
     
     // copy user data to local buffer
-    int bytesToCopy = buf.length-count;
+    int bytesToCopy = buf.length-count; // 当前buf中剩余的字节数
+    // 如果len小于剩余可写字节数，那么就可以全部拷贝到buf中，否则，只能将buf拷贝满，但是还有数据没有拷贝进来
     bytesToCopy = (len<bytesToCopy) ? len : bytesToCopy;
     System.arraycopy(b, off, buf, count, bytesToCopy);
     count += bytesToCopy;
-    if (count == buf.length) {
+    if (count == buf.length) { // buf满了
       // local buffer is full
       flushBuffer();
     } 
@@ -155,17 +158,18 @@ abstract public class FSOutputSummer extends OutputStream implements
    *
    * Returns the number of bytes that were flushed but are still left in the
    * buffer (can only be non-zero if keep is true).
+   * 将buf中的数据进行flush，有可能buf中的数据不是一个chunk的整数长度倍，如果存在这种情况，并且flushPartial=false, 那么就需要截取出来
    */
   protected synchronized int flushBuffer(boolean keep,
       boolean flushPartial) throws IOException {
     int bufLen = count;
-    int partialLen = bufLen % sum.getBytesPerChecksum();
+    int partialLen = bufLen % sum.getBytesPerChecksum(); // 对每次需要计算checksum的数据量取余操作
     int lenToFlush = flushPartial ? bufLen : bufLen - partialLen;
     if (lenToFlush != 0) {
       writeChecksumChunks(buf, 0, lenToFlush);
       if (!flushPartial || keep) {
-        count = partialLen;
-        System.arraycopy(buf, bufLen - count, buf, 0, count);
+        count = partialLen; // 剩余的数据
+        System.arraycopy(buf, bufLen - count, buf, 0, count);// 把剩余的数据重新从头放到buf中
       } else {
         count = 0;
       }
@@ -206,15 +210,17 @@ abstract public class FSOutputSummer extends OutputStream implements
 
   /** Generate checksums for the given data chunks and output chunks & checksums
    * to the underlying output stream.
+   * 这个b[]来自于OutputSummer的buf
    */
   private void writeChecksumChunks(byte b[], int off, int len)
   throws IOException {
+    // 计算b的checksum，每个chunk的checksum占用4个byte
     sum.calculateChunkedSums(b, off, len, checksum, 0);
     TraceScope scope = createWriteTraceScope();
     try {
-      for (int i = 0; i < len; i += sum.getBytesPerChecksum()) {
-        int chunkLen = Math.min(sum.getBytesPerChecksum(), len - i);
-        int ckOffset = i / sum.getBytesPerChecksum() * getChecksumSize();
+      for (int i = 0; i < len; i += sum.getBytesPerChecksum()) { // 每次写一个chunk的数据
+        int chunkLen = Math.min(sum.getBytesPerChecksum(), len - i); // 如果剩余的数据不足一个chunk，就写全部的剩余
+        int ckOffset = i / sum.getBytesPerChecksum() * getChecksumSize(); // 普通的CRC校验是4byte，ckOffset指的是在checksum结果数组中的校验码
         writeChunk(b, off + i, chunkLen, checksum, ckOffset,
             getChecksumSize());
       }

@@ -82,6 +82,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * need to call encode, and if there is one parity block, we need to call
  * decode. Notice we only read once and reconstruct all missed striped block
  * if they are more than one.
+ * 如果source block都是data block，比如，我们丢失的是parity block，我们就调用encode，只要source中有一个parity block，我们需要调用的就是decode
  *
  * In step3, send the reconstructed data to targets by constructing packet
  * and send them directly. Same as continuous block replication, we
@@ -97,6 +98,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *    reconstruction is more expensive than continuous block replication,
  *    it needs to read from several other datanodes, should we make sure the
  *    reconstructed result received by targets?
+ *    一个StripedReconstructor负责一个BlockGroup 的所有的internal block 的恢复
  */
 @InterfaceAudience.Private
 abstract class StripedReconstructor {
@@ -119,7 +121,7 @@ abstract class StripedReconstructor {
   private ErasureCodingWorker erasureCodingWorker;
   private final CachingStrategy cachingStrategy;
   private long maxTargetLength = 0L;
-  private final BitSet liveBitSet;
+  private final BitSet liveBitSet; // 这个block group中哪个internal block是live的，哪个是dead的
 
   // metrics
   private AtomicLong bytesRead = new AtomicLong(0);
@@ -197,7 +199,7 @@ abstract class StripedReconstructor {
     BUFFER_POOL.putBuffer(buffer);
   }
 
-  ExtendedBlock getBlock(int i) {
+  ExtendedBlock getBlock(int i) { // 获取index=i的对应的internal block
     return StripedBlockUtil.constructInternalBlock(blockGroup, ecPolicy, i);
   }
 

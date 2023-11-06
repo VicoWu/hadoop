@@ -83,12 +83,12 @@ import org.apache.hadoop.thirdparty.com.google.common.base.Preconditions;
  * this stream. Data is broken up into packets, each packet is
  * typically 64K in size. A packet comprises of chunks. Each chunk
  * is typically 512 bytes and has an associated checksum with it.
+ * https://issues.apache.org/jira/browse/HDFS-8734
  *
  * When a client application fills up the currentPacket, it is
  * enqueued into the dataQueue of DataStreamer. DataStreamer is a
  * thread that picks up packets from the dataQueue and sends it to
  * the first datanode in the pipeline.
- *
  ****************************************************************/
 @InterfaceAudience.Private
 public class DFSOutputStream extends FSOutputSummer
@@ -275,7 +275,7 @@ public class DFSOutputStream extends FSOutputSummer
       boolean shouldRetry = true;
       int retryCount = CREATE_RETRY_COUNT;
       while (shouldRetry) {
-        shouldRetry = false;
+        shouldRetry = false
         try {
           stat = dfsClient.namenode.create(src, masked, dfsClient.clientName,
               new EnumSetWritable<>(flag), createParent, replication,
@@ -390,6 +390,10 @@ public class DFSOutputStream extends FSOutputSummer
     }
   }
 
+  /**
+   * 这个stream可能是DFSStripedOutputStream(封装了StrippedDataStream)，也可能是DFSOutputStream（封装了DataStream）
+   * @throws IOException
+   */
   static DFSOutputStream newStreamForAppend(DFSClient dfsClient, String src,
       EnumSet<CreateFlag> flags, Progressable progress, LocatedBlock lastBlock,
       HdfsFileStatus stat, DataChecksum checksum, String[] favoredNodes)
@@ -432,18 +436,20 @@ public class DFSOutputStream extends FSOutputSummer
     currentPacket.writeChecksum(checksum, ckoff, cklen);
     currentPacket.writeData(b, offset, len);
     currentPacket.incNumChunks();
-    getStreamer().incBytesCurBlock(len);
+    getStreamer().incBytesCurBlock(len);// 增加往当前block中写入的byte的计数
 
     // If packet is full, enqueue it for transmission
     if (currentPacket.getNumChunks() == currentPacket.getMaxChunks() ||
-        getStreamer().getBytesCurBlock() == blockSize) {
-      enqueueCurrentPacketFull();
+        getStreamer().getBytesCurBlock() == blockSize) { // 如果当前packet的chunk数量已经等于packet的最大chunk，或者当前的streamer的block大小(getBytesCurBlock())已经等于配置的blocksize了
+      enqueueCurrentPacketFull(); // 这个packet已经写满了，可以enqueue了，是enqueue到当前streamer的dataQueue中去
     }
   }
 
   /* write the data chunk in <code>buffer</code> staring at
   * <code>buffer.position</code> with
   * a length of <code>len > 0</code>, and its checksum
+  * 将chunk写入到packet中。如果发现packet满了，那么将packet 入队列
+  * 将buffer中长度为len的chunk加入packet，这个chunk的checksum是在checksum数组中的[ckoff, ckoff+cklen]中
   */
   protected synchronized void writeChunk(ByteBuffer buffer, int len,
       byte[] checksum, int ckoff, int cklen) throws IOException {
@@ -487,6 +493,10 @@ public class DFSOutputStream extends FSOutputSummer
     }
   }
 
+  /**
+   * enqueue packet的时候，是把packet放到它对应的StripedDataStream的dataQueue里面去
+   * @throws IOException
+   */
   void enqueueCurrentPacket() throws IOException {
     getStreamer().waitAndQueuePacket(currentPacket);
     currentPacket = null;
@@ -1074,6 +1084,10 @@ public class DFSOutputStream extends FSOutputSummer
     return getClass().getSimpleName() + ":" + streamer;
   }
 
+  /**
+   * 这个addBlock操作是向NN申请新的block，虽然是DFSOutputStream负责，但是有可能这个block不是continuous block，而是一个Stripped block
+   * @throws IOException
+   */
   static LocatedBlock addBlock(DatanodeInfo[] excludedNodes,
       DFSClient dfsClient, String src, ExtendedBlock prevBlock, long fileId,
       String[] favoredNodes, EnumSet<AddBlockFlag> allocFlags)
@@ -1085,6 +1099,8 @@ public class DFSOutputStream extends FSOutputSummer
     long localstart = Time.monotonicNow();
     while (true) {
       try {
+        // 和NN通信，创建一个新的block，虽然是DFSOutputStream负责，但是有可能这个block不是continuous block，而是一个Stripped block
+        // NN端会根据src的路径判断是创建什么样儿的block
         return dfsClient.namenode.addBlock(src, dfsClient.clientName, prevBlock,
             excludedNodes, fileId, favoredNodes, allocFlags);
       } catch (RemoteException e) {

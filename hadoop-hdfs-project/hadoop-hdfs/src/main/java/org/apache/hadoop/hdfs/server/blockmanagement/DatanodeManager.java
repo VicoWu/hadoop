@@ -1756,7 +1756,10 @@ public class DatanodeManager {
     }
   }
 
-  /** Handle heartbeat from datanodes. */
+  /** Handle heartbeat from datanodes.
+   *  对DN的心跳的处理，所有对datanode的相关指令都会通过心跳回复给DN,各种指令封装在DatanodeCommand[]数组中，
+   *  对DatanodeCommand的实现是多种多样的
+   * */
   public DatanodeCommand[] handleHeartbeat(DatanodeRegistration nodeReg,
       StorageReport[] reports, final String blockPoolId,
       long cacheCapacity, long cacheUsed, int xceiverCount, 
@@ -1800,19 +1803,20 @@ public class DatanodeManager {
     // Allocate _approximately_ maxTransfers pending tasks to DataNode.
     // NN chooses pending tasks based on the ratio between the lengths of
     // replication and erasure-coded block queues.
-    int totalReplicateBlocks = nodeinfo.getNumberOfReplicateBlocks();
-    int totalECBlocks = nodeinfo.getNumberOfBlocksToBeErasureCoded();
+    int totalReplicateBlocks = nodeinfo.getNumberOfReplicateBlocks(); // 需要进行replicate 的 block数量
+    int totalECBlocks = nodeinfo.getNumberOfBlocksToBeErasureCoded(); // 需要进行ec 计算的internal block的数量
     int totalBlocks = totalReplicateBlocks + totalECBlocks;
     if (totalBlocks > 0) {
-      int numReplicationTasks = (int) Math.ceil(
+      int numReplicationTasks = (int) Math.ceil( // 可以分配给DN进行replication的task数量
           (double) (totalReplicateBlocks * maxTransfers) / totalBlocks);
-      int numECTasks = (int) Math.ceil(
+      int numECTasks = (int) Math.ceil( //  可以分配给DN进行ec coding的task数量
           (double) (totalECBlocks * maxTransfers) / totalBlocks);
       if (LOG.isDebugEnabled()) {
         LOG.debug("Pending replication tasks: " + numReplicationTasks
             + " erasure-coded tasks: " + numECTasks);
       }
       // check pending replication tasks
+      // 检查这个节点上有哪些pending的replication 任务
       List<BlockTargetPair> pendingList = nodeinfo.getReplicationCommand(
           numReplicationTasks);
       if (pendingList != null && !pendingList.isEmpty()) {
@@ -1836,6 +1840,7 @@ public class DatanodeManager {
         }
       }
       // check pending erasure coding tasks
+      // 检查这个节点上有哪些pending的replication 任务
       List<BlockECReconstructionInfo> pendingECList = nodeinfo
           .getErasureCodeCommand(numECTasks);
       if (pendingECList != null && !pendingECList.isEmpty()) {

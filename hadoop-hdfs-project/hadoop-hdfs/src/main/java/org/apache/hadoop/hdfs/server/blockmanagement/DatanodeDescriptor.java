@@ -198,6 +198,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
   private final BlockQueue<BlockTargetPair> replicateBlocks =
       new BlockQueue<>();
   /** A queue of blocks to be erasure coded by this datanode */
+  // 一个erasurecodeBlocks是属于某一个DN的。查看DataNodeManager L1839
   private final BlockQueue<BlockECReconstructionInfo> erasurecodeBlocks =
       new BlockQueue<>();
   /** A queue of blocks to be recovered by this datanode */

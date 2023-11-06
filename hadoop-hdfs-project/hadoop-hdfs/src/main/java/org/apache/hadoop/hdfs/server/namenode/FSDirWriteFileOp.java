@@ -149,6 +149,7 @@ class FSDirWriteFileOp {
   }
 
   /**
+   * 这个方法会根据文件的block类型(continuous 还是 stripe)确定下来需要分配的target node的数量
    * Part I of getAdditionalBlock().
    * Analyze the state of the file under read lock to determine if the client
    * can add a new block, detect potential retries, lease mismatches,
@@ -195,9 +196,9 @@ class FSDirWriteFileOp {
       ecPolicy =
           FSDirErasureCodingOp.unprotectedGetErasureCodingPolicy(fsn, iip);
       numTargets = (short) (ecPolicy.getSchema().getNumDataUnits()
-          + ecPolicy.getSchema().getNumParityUnits());
+          + ecPolicy.getSchema().getNumParityUnits()); // 目标block的数量
     } else {
-      numTargets = pendingFile.getFileReplication();
+      numTargets = pendingFile.getFileReplication(); // 如果是continuous， 那么返回副本数量
     }
     storagePolicyID = pendingFile.getStoragePolicyID();
     return new ValidateAddBlockResult(blockSize, numTargets, storagePolicyID,
@@ -206,7 +207,7 @@ class FSDirWriteFileOp {
 
   static LocatedBlock makeLocatedBlock(FSNamesystem fsn, BlockInfo blk,
       DatanodeStorageInfo[] locs, long offset) throws IOException {
-    LocatedBlock lBlk = BlockManager.newLocatedBlock(
+    LocatedBlock lBlk = BlockManager.newLocatedBlock( // 构造LocatedBlock的对象
         fsn.getExtendedBlock(new Block(blk)), blk, locs, offset);
     fsn.getBlockManager().setBlockToken(lBlk,
         BlockTokenIdentifier.AccessMode.WRITE);
@@ -254,11 +255,11 @@ class FSDirWriteFileOp {
     // allocate new block, record block locations in INode.
     final BlockType blockType = pendingFile.getBlockType();
     // allocate new block, record block locations in INode.
-    Block newBlock = fsn.createNewBlock(blockType); // 这个block分配的时候，只是分配了logical blogk id，即只有group ID
+    Block newBlock = fsn.createNewBlock(blockType); // 这个block分配的时候，只有一个logical block id，即只有group ID，而group id的低4位是0，即没有group index
     INodesInPath inodesInPath = INodesInPath.fromINode(pendingFile);
     saveAllocatedBlock(fsn, src, inodesInPath, newBlock, targets, blockType);
 
-    persistNewBlock(fsn, src, pendingFile);
+    persistNewBlock(fsn, src, pendingFile); // 记录到edit log中
     offset = pendingFile.computeFileSize();
 
     // Return located block
@@ -489,6 +490,7 @@ class FSDirWriteFileOp {
       BlockType blockType) throws IOException {
     fsd.writeLock();
     try {
+      // 一个INodeInPath的路径中的每个节点都是一个INode
       final INodeFile fileINode = inodesInPath.getLastINode().asFile();
       Preconditions.checkState(fileINode.isUnderConstruction());
 
@@ -506,7 +508,7 @@ class FSDirWriteFileOp {
         fsd.updateCount(inodesInPath, 0, fileINode.getPreferredBlockSize(),
             numLocations, true);
         blockInfo = new BlockInfoStriped(block, ecPolicy);
-        blockInfo.convertToBlockUnderConstruction(
+        blockInfo.convertToBlockUnderConstruction( // 构建这个BlockInfo 的 uc信息
             HdfsServerConstants.BlockUCState.UNDER_CONSTRUCTION, targets);
       } else {
         // check quota limits and updated space consumed
@@ -519,7 +521,7 @@ class FSDirWriteFileOp {
             HdfsServerConstants.BlockUCState.UNDER_CONSTRUCTION, targets);
       }
       fsd.getBlockManager().addBlockCollection(blockInfo, fileINode);
-      fileINode.addBlock(blockInfo);
+      fileINode.addBlock(blockInfo);// 把这个block append到这个INodeFile的block信息里面去
 
       if(NameNode.stateChangeLog.isDebugEnabled()) {
         NameNode.stateChangeLog.debug("DIR* FSDirectory.addBlock: "
@@ -757,7 +759,7 @@ class FSDirWriteFileOp {
   private static void persistNewBlock(
       FSNamesystem fsn, String path, INodeFile file) {
     Preconditions.checkArgument(file.isUnderConstruction());
-    fsn.getEditLog().logAddBlock(path, file);
+    fsn.getEditLog().logAddBlock(path, file); // 记录到edit log中
     if (NameNode.stateChangeLog.isDebugEnabled()) {
       NameNode.stateChangeLog.debug("persistNewBlock: "
               + path + " with new block " + file.getLastBlock().toString()
@@ -782,7 +784,7 @@ class FSDirWriteFileOp {
     assert fsn.hasWriteLock();
     BlockInfo b = addBlock(fsn.dir, src, inodesInPath, newBlock, targets,
         blockType);
-    logAllocatedBlock(src, b);
+    logAllocatedBlock(src, b);//只是记录到日志里面
     DatanodeStorageInfo.incrementBlocksScheduled(targets);
   }
 

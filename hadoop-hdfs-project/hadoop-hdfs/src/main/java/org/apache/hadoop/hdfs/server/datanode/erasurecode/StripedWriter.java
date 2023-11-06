@@ -65,6 +65,13 @@ class StripedWriter {
   private int bytesPerChecksum;
   private int checksumSize;
 
+  /**
+   * 负责一个Block Group的恢复工作
+   * @param reconstructor
+   * @param datanode
+   * @param conf
+   * @param stripedReconInfo
+   */
   StripedWriter(StripedReconstructor reconstructor, DataNode datanode,
       Configuration conf, StripedReconstructionInfo stripedReconInfo) {
     this.reconstructor = reconstructor;
@@ -88,7 +95,7 @@ class StripedWriter {
         "Too much missed striped blocks.");
     initTargetIndices();
     long maxTargetLength = 0L;
-    for (short targetIndex : targetIndices) {
+    for (short targetIndex : targetIndices) { // 遍历每一个internal block，获取最大的internal block的长度
       maxTargetLength = Math.max(maxTargetLength,
           reconstructor.getBlockLen(targetIndex));
     }
@@ -228,12 +235,17 @@ class StripedWriter {
     return results;
   }
 
+  /**
+   * 初始化target buffer，target buffer是准备写入到target的数据。
+   * @param toReconstructLen internal block的长度
+   * @return
+   */
   ByteBuffer[] getRealTargetBuffers(int toReconstructLen) {
     int numGood = getRealTargets();
-    ByteBuffer[] outputs = new ByteBuffer[numGood];
+    ByteBuffer[] outputs = new ByteBuffer[numGood]; // 初始化状态下，position = 0
     int m = 0;
     for (int i = 0; i < targets.length; i++) {
-      if (targetsStatus[i]) {
+      if (targetsStatus[i]) { // target is in good status
         writers[i].getTargetBuffer().limit(toReconstructLen);
         outputs[m++] = writers[i].getTargetBuffer();
       }
@@ -259,6 +271,10 @@ class StripedWriter {
     return checksumBuf;
   }
 
+  /**
+   * 由于chunk就是checksum的基本单位，因此bytesPerChecksum就是一个chunk中的数据长度
+   * @return
+   */
   int getBytesPerChecksum() {
     return bytesPerChecksum;
   }

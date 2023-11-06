@@ -255,24 +255,32 @@ class LowRedundancyBlocks implements Iterable<BlockInfo> {
     }
   }
 
+  /**
+   * 获取这个low redundancy block的Priority，以放入对应的priority队列中去
+   * @param curReplicas
+   * @param outOfServiceReplicas
+   * @param dataBlkNum
+   * @param parityBlkNum
+   * @return
+   */
   private int getPriorityStriped(int curReplicas, int outOfServiceReplicas,
       short dataBlkNum, short parityBlkNum) {
     if (curReplicas < dataBlkNum) {
       // There are some replicas on decommissioned nodes so it's not corrupted
-      if (curReplicas + outOfServiceReplicas >= dataBlkNum) {
+      if (curReplicas + outOfServiceReplicas >= dataBlkNum) { //有一部分replica在decommissiong 节点上，因此它还没有corrupt，但是必须立刻恢复了
         return QUEUE_HIGHEST_PRIORITY;
       }
-      return QUEUE_WITH_CORRUPT_BLOCKS;
-    } else if (curReplicas == dataBlkNum) {
+      return QUEUE_WITH_CORRUPT_BLOCKS; // 已经corrupt了，无法恢复了
+    } else if (curReplicas == dataBlkNum) { // 再丢失一个replica数据就无法恢复了
       // highest risk of loss, highest priority
       return QUEUE_HIGHEST_PRIORITY;
     } else if ((curReplicas - dataBlkNum) * 3 < parityBlkNum + 1) {
       // can only afford one replica loss
       // this is considered very insufficiently redundant blocks.
-      return QUEUE_VERY_LOW_REDUNDANCY;
+      return QUEUE_VERY_LOW_REDUNDANCY; // 再丢失一个replica就corrupt了
     } else {
       // add to the normal queue for insufficiently redundant blocks.
-      return QUEUE_LOW_REDUNDANCY;
+      return QUEUE_LOW_REDUNDANCY;// 一般优先级
     }
   }
 
@@ -519,6 +527,7 @@ class LowRedundancyBlocks implements Iterable<BlockInfo> {
     int count = 0;
     int priority = 0;
     HashSet<BlockInfo> toRemove = new HashSet<>();
+    // 依次遍历每一个LEVEL的queue，形成一个需要进行re-construct的List<List>, 外层list就是优先级，内层list就是这个优先级下面的需要进行re-construct的block
     for (; count < blocksToProcess && priority < LEVEL; priority++) {
       // Go through all blocks that need reconstructions with current priority.
       // Set the iterator to the first unprocessed block at this priority level
@@ -527,7 +536,7 @@ class LowRedundancyBlocks implements Iterable<BlockInfo> {
       final boolean inCorruptLevel = (QUEUE_WITH_CORRUPT_BLOCKS == priority);
       final Iterator<BlockInfo> i = priorityQueues.get(priority).getBookmark();
       final List<BlockInfo> blocks = new LinkedList<>();
-      if (!inCorruptLevel) {
+      if (!inCorruptLevel) { // 是不是因为corrupt block已经没有恢复的必要了？
         blocksToReconstruct.add(blocks);
       }
       for(; count < blocksToProcess && i.hasNext(); count++) {

@@ -87,7 +87,7 @@ public abstract class RawErasureDecoder {
         inputs, erasedIndexes, outputs);
 
     boolean usingDirectBuffer = decodingState.usingDirectBuffer;
-    int dataLen = decodingState.decodeLength;
+    int dataLen = decodingState.decodeLength; // 当input buffer在读状态下， dataLen就是需要读取的数据量
     if (dataLen == 0) {
       return;
     }
@@ -95,7 +95,7 @@ public abstract class RawErasureDecoder {
     int[] inputPositions = new int[inputs.length];
     for (int i = 0; i < inputPositions.length; i++) {
       if (inputs[i] != null) {
-        inputPositions[i] = inputs[i].position();
+        inputPositions[i] = inputs[i].position(); // 记录每一个ByteBuffer开始读取的位置，因为后续读取的时候会改变这个位置
       }
     }
 
@@ -105,11 +105,11 @@ public abstract class RawErasureDecoder {
       ByteArrayDecodingState badState = decodingState.convertToByteArrayState();
       doDecode(badState);
     }
-
+    // 为什么要将position修改为LIMIT的位置(dataLen = limit - position)？
     for (int i = 0; i < inputs.length; i++) {
       if (inputs[i] != null) {
-        // dataLen bytes consumed
-        inputs[i].position(inputPositions[i] + dataLen);
+        // dataLen bytes consumed 消费了dataLen长度的数据，因此统一更新数据长度
+        inputs[i].position(inputPositions[i] + dataLen); // 同一更新position
       }
     }
   }

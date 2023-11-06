@@ -36,7 +36,9 @@ public class LocatedStripedBlock extends LocatedBlock {
   private static final byte[] EMPTY_INDICES = {};
   private static final Token<BlockTokenIdentifier> EMPTY_TOKEN = new Token<>();
 
-  private final byte[] blockIndices;
+  // blockIndices[i]代表了replicas[i]对应的replica在block group中的索引值，
+  // 查看BlockUnderConstructionFeature.setExpectedLocations L105
+  private final byte[] blockIndices; // physical block在block group中的索引
   private Token<BlockTokenIdentifier>[] blockTokens;
 
   @SuppressWarnings({"unchecked"})

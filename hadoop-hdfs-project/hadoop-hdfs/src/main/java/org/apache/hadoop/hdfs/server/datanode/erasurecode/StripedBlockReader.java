@@ -70,6 +70,9 @@ class StripedBlockReader {
   private ByteBuffer buffer;
   private boolean isLocal;
 
+  /**
+   * source 代表数据需要从哪个DN读取， datanode代表当前自己
+   */
   StripedBlockReader(StripedReader stripedReader, DataNode datanode,
                      Configuration conf, short index, ExtendedBlock block,
                      DatanodeInfo source, long offsetInBlock) {
@@ -77,10 +80,10 @@ class StripedBlockReader {
     this.datanode = datanode;
     this.conf = conf;
 
-    this.index = index;
-    this.source = source;
+    this.index = index; // 需要恢复replica的internal block在block group中的index
+    this.source = source;// 需要恢复replica所载的DataNode
     this.block = block;
-    this.isLocal = false;
+    this.isLocal = false;// local默认为false
 
     BlockReader tmpBlockReader = createBlockReader(offsetInBlock);
     if (tmpBlockReader != null) {
@@ -104,6 +107,7 @@ class StripedBlockReader {
     this.blockReader = createBlockReader(offsetInBlock);
   }
 
+  // 看一下跟客户端读取block是否一样？
   private BlockReader createBlockReader(long offsetInBlock) {
     if (offsetInBlock >= block.getNumBytes()) {
       return null;
@@ -124,6 +128,7 @@ class StripedBlockReader {
          *
          * TODO: add proper tracer
          */
+      // 从代码可以看到，这里用的是TCP Peer, 没有进行Domain Socket的尝试
       peer = newConnectedPeer(block, dnAddr, blockToken, source);
       if (peer.isLocal()) {
         this.isLocal = true;
@@ -172,7 +177,7 @@ class StripedBlockReader {
       public BlockReadStats call() throws Exception {
         try {
           getReadBuffer().limit(length);
-          return actualReadFromBlock();
+          return actualReadFromBlock(); // 将数据读入到StripedBlockReader的buffer中去
         } catch (ChecksumException e) {
           LOG.warn("Found Checksum error for {} from {} at {}", block,
               source, e.getPos());
@@ -196,7 +201,7 @@ class StripedBlockReader {
     int len = buffer.remaining();
     int n = 0;
     while (n < len) {
-      int nread = blockReader.read(buffer);
+      int nread = blockReader.read(buffer); //将数据读到buffer中去
       if (nread <= 0) {
         break;
       }

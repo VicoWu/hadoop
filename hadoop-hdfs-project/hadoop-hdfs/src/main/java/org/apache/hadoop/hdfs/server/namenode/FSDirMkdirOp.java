@@ -139,7 +139,7 @@ class FSDirMkdirOp {
           : perm;
       perm = addImplicitUwx(basePerm, perm);
       // create all the missing directories.
-      final int last = iip.length() - 2;
+      final int last = iip.length() - 2; // 依次从顶向下开始创建
       for (int i = existing.length(); existing != null && i <= last; i++) {
         byte[] component = iip.getPathComponent(i);
         existing = createSingleDirectory(fsd, existing, component, perm);

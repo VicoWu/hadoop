@@ -23,6 +23,7 @@ import org.apache.hadoop.classification.InterfaceStability;
 
 /**
  * Identifies a Block uniquely across the block pools
+ * 这个Block只是对一个block进行了标记，但是这个block并没有分配存储位置，分配了存储位置的Block叫做LocatedBlock
  */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving

@@ -36,6 +36,7 @@ import org.apache.hadoop.thirdparty.com.google.common.collect.Lists;
  * and other block metadata (E.g. the file offset associated with this
  * block, whether it is corrupt, a location is cached in memory,
  * security token, etc).
+ * 两个子类的实现LocatedStrippedBlock和LocatedContinuousBlock
  */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving

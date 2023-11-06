@@ -266,7 +266,7 @@ public class INodeFile extends INodeWithAdditionalFields
     final long layoutRedundancy = HeaderFormat.getBlockLayoutRedundancy(
         blockType, replication, ecPolicyID);
     header = HeaderFormat.toLong(preferredBlockSize, layoutRedundancy,
-        storagePolicyID);
+        storagePolicyID); // 根据所创建的文件的类型，构建header信息
     if (blklist != null && blklist.length > 0) {
       for (BlockInfo b : blklist) {
         Preconditions.checkArgument(b.getBlockType() == blockType);

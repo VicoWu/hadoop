@@ -318,7 +318,7 @@ public class BlockIdManager {
 
   public static byte getBlockIndex(Block reportedBlock) {
     return (byte) (reportedBlock.getBlockId() &
-        HdfsServerConstants.BLOCK_GROUP_INDEX_MASK); //  低4位是block index
+        HdfsServerConstants.BLOCK_GROUP_INDEX_MASK); //  低4位是block index，这个方法只保留低四位
   }
 
   SequentialBlockGroupIdGenerator getBlockGroupIdGenerator() {

@@ -30,6 +30,8 @@ import org.apache.hadoop.util.Time;
  * StripedBlockReconstructor reconstruct one or more missed striped block in
  * the striped block group, the minimum number of live striped blocks should
  * be no less than data block number.
+ * 要想EC block能够恢复，当前存活的striped internal block不应该小于ECSchema的data block数量。比如,ECSchema(6,2)，
+ * 那么最多容忍两个block的丢失，假如存活的block数量小于5，说明多于2个block丢失了，这将导致这个block group彻底丢失
  */
 @InterfaceAudience.Private
 class StripedBlockReconstructor extends StripedReconstructor
@@ -88,16 +90,17 @@ class StripedBlockReconstructor extends StripedReconstructor
 
   @Override
   void reconstruct() throws IOException {
-    while (getPositionInBlock() < getMaxTargetLength()) {
+    // 在internal block中的位置依然小于最大的target internal block的长度， 意味着还需要接着读数据
+    while (getPositionInBlock() < getMaxTargetLength()) { // 当前的position还小于最大的internal block的长度
       DataNodeFaultInjector.get().stripedBlockReconstruction();
       long remaining = getMaxTargetLength() - getPositionInBlock();
-      final int toReconstructLen =
+      final int toReconstructLen = // 最多只能读取buffer size大小的数据（从StripedReader的构造函数可以看到，buffer size肯定是chunk的整数倍）
           (int) Math.min(getStripedReader().getBufferSize(), remaining);
 
       long start = Time.monotonicNow();
       // step1: read from minimum source DNs required for reconstruction.
       // The returned success list is the source DNs we do real read from
-      getStripedReader().readMinimumSources(toReconstructLen);
+      getStripedReader().readMinimumSources(toReconstructLen);// 从远程最多读取toReconstructLen byte的数据
       long readEnd = Time.monotonicNow();
 
       // step2: decode to reconstruct targets
@@ -124,15 +127,16 @@ class StripedBlockReconstructor extends StripedReconstructor
   }
 
   private void reconstructTargets(int toReconstructLen) throws IOException {
+    // 从远程的source节点拉取到6个internal block
     ByteBuffer[] inputs = getStripedReader().getInputBuffers(toReconstructLen);
 
     int[] erasedIndices = stripedWriter.getRealTargetIndices();
     ByteBuffer[] outputs = stripedWriter.getRealTargetBuffers(toReconstructLen);
 
     if (isValidationEnabled()) {
-      markBuffers(inputs);
-      decode(inputs, erasedIndices, outputs);
-      resetBuffers(inputs);
+      markBuffers(inputs); // 记录当前的position
+      decode(inputs, erasedIndices, outputs); // 在这里进行解码，将解码以后的数据写入到outputs中，outputs其实就是StripedBlockWriter中的buf
+      resetBuffers(inputs); // 还原position
 
       DataNodeFaultInjector.get().badDecoding(outputs);
       long start = Time.monotonicNow();

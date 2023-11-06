@@ -48,6 +48,9 @@ public class StripedDataStreamer extends DataStreamer {
   private final Coordinator coordinator;
   private final int index;
 
+  /**
+   * 每一个StripedDataStreamer负责一个Logical Block中的一个internal block
+   */
   StripedDataStreamer(HdfsFileStatus stat,
                       DFSClient dfsClient, String src,
                       Progressable progress, DataChecksum checksum,
@@ -89,10 +92,16 @@ public class StripedDataStreamer extends DataStreamer {
     return coordinator.getFollowingBlocks().poll(index);
   }
 
+  /**
+   * 重载了DataStreamer.nextBlockOutputStream()方法，但是没有重载DataStreamer.run()方法
+   * 这是创建下一个internal block，即这个DataStreamer的同一index（每个DataStreamer负责的index是不变的）的下一个internal block
+   * @return
+   * @throws IOException
+   */
   @Override
   protected LocatedBlock nextBlockOutputStream() throws IOException {
     boolean success;
-    LocatedBlock lb = getFollowingBlock();
+    LocatedBlock lb = getFollowingBlock(); // 这是获取同一index的下一个internal block
     block.setCurrentBlock(lb.getBlock());
     block.setNumBytes(0);
     bytesSent = 0;

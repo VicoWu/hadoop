@@ -51,6 +51,7 @@ import java.util.EnumSet;
 /**
  * A striped block writer that writes reconstructed data to the remote target
  * datanode.
+ * 一个StripedBlockWriter是和一个block和一个target绑定的，就是为了把这个internal block发送到target中去
  */
 @InterfaceAudience.Private
 class StripedBlockWriter {
@@ -170,9 +171,9 @@ class StripedBlockWriter {
       ByteBuffer directCheckSumBuf =
           BUFFER_POOL.getBuffer(true, stripedWriter.getChecksumBuf().length);
       stripedWriter.getChecksum().calculateChunkedSums(
-          targetBuffer, directCheckSumBuf);
-      directCheckSumBuf.get(stripedWriter.getChecksumBuf());
-      BUFFER_POOL.putBuffer(directCheckSumBuf);
+          targetBuffer, directCheckSumBuf); // 对targetBuffer的数据做校验，写入directCheckSumBuf
+      directCheckSumBuf.get(stripedWriter.getChecksumBuf()); // directCheckSumBuf写入到stripedWriter的buf中去
+      BUFFER_POOL.putBuffer(directCheckSumBuf); //  归还directCheckSumBuf到BUFFER_POOL中
     } else {
       stripedWriter.getChecksum().calculateChunkedSums(
           targetBuffer.array(), 0, targetBuffer.remaining(),
@@ -185,18 +186,19 @@ class StripedBlockWriter {
           stripedWriter.getMaxChunksPerPacket(),
           blockOffset4Target, seqNo4Target++,
           stripedWriter.getChecksumSize(), false);
-      int maxBytesToPacket = stripedWriter.getMaxChunksPerPacket()
+      int maxBytesToPacket = stripedWriter.getMaxChunksPerPacket() // 单个packet中的chunk数量 * chunk的长度
           * stripedWriter.getBytesPerChecksum();
       int toWrite = targetBuffer.remaining() > maxBytesToPacket ?
-          maxBytesToPacket : targetBuffer.remaining();
+          maxBytesToPacket : targetBuffer.remaining(); // 发送的数据长度
       int ckLen = ((toWrite - 1) / stripedWriter.getBytesPerChecksum() + 1)
           * stripedWriter.getChecksumSize();
-      packet.writeChecksum(stripedWriter.getChecksumBuf(), ckOff, ckLen);
+      packet.writeChecksum(stripedWriter.getChecksumBuf(), ckOff, ckLen); // 把checksum中的数据存入packet中
       ckOff += ckLen;
-      packet.writeData(targetBuffer, toWrite);
+      //  把inBuffer中的数据写入到Packet中去（注意并不是发送，只是写入到Packet对应的buf中）
+      packet.writeData(targetBuffer, toWrite); // 把存放在targetBuffer中的长度为toWrite的数据存放到packet中
 
       // Send packet
-      packet.writeTo(targetOutputStream);
+      packet.writeTo(targetOutputStream); // 把packet中的数据发送到targetOutputStream绑定的远程 DN中去
 
       blockOffset4Target += toWrite;
       stripedWriter.getReconstructor().incrBytesWritten(toWrite);

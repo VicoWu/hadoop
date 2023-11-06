@@ -48,6 +48,7 @@ import java.util.concurrent.Future;
 /**
  * Manage striped readers that performs reading of block data from remote to
  * serve input data for the erasure decoding.
+ * 一个StripedReader管理了读取一个Logical Block中所有的internal block所有的reader
  */
 @InterfaceAudience.Private
 class StripedReader {
@@ -67,7 +68,7 @@ class StripedReader {
   private DataChecksum checksum;
   // Striped read buffer size
   private int bufferSize;
-  private int[] successList;
+  private int[] successList; // 每个successList[i]的值是internal block在group中的序号
 
   private final int minRequiredSources;
   // the number of xmits used by the re-construction task.
@@ -77,7 +78,7 @@ class StripedReader {
   private short[] zeroStripeIndices;
 
   // sources
-  private final byte[] liveIndices;
+  private final byte[] liveIndices; //liveIndices每一个位置的值代表的是internal block在group中的位置
   private final DatanodeInfo[] sources;
 
   private final List<StripedBlockReader> readers;
@@ -103,7 +104,7 @@ class StripedReader {
 
     int cellsNum = (int) ((stripedReconInfo.getBlockGroup().getNumBytes() - 1)
         / stripedReconInfo.getEcPolicy().getCellSize() + 1);
-    minRequiredSources = Math.min(cellsNum, dataBlkNum);
+    minRequiredSources = Math.min(cellsNum, dataBlkNum); // minRequiredSources可能等于data block的数量，有可能等于当前这个stripe的cell数量
 
     if (minRequiredSources < dataBlkNum) {
       int zeroStripNum = dataBlkNum - minRequiredSources;
@@ -144,6 +145,8 @@ class StripedReader {
     // In each iteration of read, the successList list may be updated if
     // some source DN is corrupted or slow. And use the updated successList
     // list of DNs for next iteration read.
+    // 初始化一个success list, 代表可以进行internal block读取的DN,由于每次读取的过程中可能发现有些DN不好用，
+    // 因此会更新这个list
     successList = new int[minRequiredSources];
 
     StripedBlockReader reader;
@@ -151,7 +154,7 @@ class StripedReader {
     for (int i = 0; i < sources.length && nSuccess < minRequiredSources; i++) {
       reader = createReader(i, 0);
       readers.add(reader);
-      if (reader.getBlockReader() != null) {
+      if (reader.getBlockReader() != null) { // 连接已经建立好了
         initOrVerifyChecksum(reader);
         successList[nSuccess++] = i;
       }
@@ -165,17 +168,24 @@ class StripedReader {
     }
   }
 
+  /**
+   * 注意，idxInSources只是在liveIndices中的索引，而liveIndices[idxInSources]才是internal block在block group中的索引
+   * @param idxInSources
+   * @param offsetInBlock
+   * @return
+   */
   StripedBlockReader createReader(int idxInSources, long offsetInBlock) {
     return new StripedBlockReader(this, datanode,
-        conf, liveIndices[idxInSources],
+        conf, liveIndices[idxInSources], // liveIndices[idxInSources] 存的是internal block在group中的index
         reconstructor.getBlock(liveIndices[idxInSources]),
         sources[idxInSources], offsetInBlock);
   }
 
   private void initBufferSize() {
-    int bytesPerChecksum = checksum.getBytesPerChecksum();
+    int bytesPerChecksum = checksum.getBytesPerChecksum(); // 默认一个chunk是4kb
     // The bufferSize is flat to divide bytesPerChecksum
-    int readBufferSize = stripedReadBufferSize;
+    int readBufferSize = stripedReadBufferSize; // 默认64kb
+    // 假如用户配置的stripedReadBufferSize是9KB, bytesPerChecksum是4KB，那么真正的bufferSize只需要8KB就行，不需要9KB
     bufferSize = readBufferSize < bytesPerChecksum ? bytesPerChecksum :
         readBufferSize - readBufferSize % bytesPerChecksum;
   }
@@ -223,10 +233,10 @@ class StripedReader {
 
     for (int i = 0; i < successList.length; i++) {
       int index = successList[i];
-      StripedBlockReader reader = getReader(index);
+      StripedBlockReader reader = getReader(index);//  获取这个internal block index的序号
       ByteBuffer buffer = reader.getReadBuffer();
       paddingBufferToLen(buffer, toReconstructLen);
-      inputs[reader.getIndex()] = (ByteBuffer)buffer.flip();
+      inputs[reader.getIndex()] = (ByteBuffer)buffer.flip(); // 将StripedReader写入到其buffer中的数据放到inputs中
     }
 
     if (successList.length < dataBlkNum) {
@@ -287,7 +297,7 @@ class StripedReader {
      * source DNs which we think best.
      */
     for (int i = 0; i < minRequiredSources; i++) {
-      StripedBlockReader reader = readers.get(successList[i]);
+      StripedBlockReader reader = readers.get(successList[i]);// successList[i]代表对应的需要从中拉取数据的block，readers.get将获取这个block对应的StripedBlockReader
       int toRead = getReadLength(liveIndices[successList[i]],
           reconstructLength);
       if (toRead > 0) {

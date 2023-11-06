@@ -894,7 +894,10 @@ public class NameNodeRpcServer implements NamenodeProtocols {
     checkNNStartup();
     namesystem.setOwner(src, username, groupname);
   }
-  
+
+  /*
+  * NameNode处理addBlock的请求。这里，一个block请求指的是对一个Block Group的请求
+  * */
   @Override
   public LocatedBlock addBlock(String src, String clientName,
       ExtendedBlock previous, DatanodeInfo[] excludedNodes, long fileId,

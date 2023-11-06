@@ -2966,7 +2966,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     try {
       checkOperation(OperationCategory.WRITE);
       lb = FSDirWriteFileOp.storeAllocatedBlock(
-          this, src, fileId, clientName, previous, targets);
+          this, src, fileId, clientName, previous, targets); // 返回了这个LocatedBloc 对象，存放了block和block的位置信息
     } finally {
       writeUnlock(operationName);
     }

@@ -133,9 +133,10 @@ public class StripedBlockUtil {
     for (short i = 0; i < locatedBGSize; i++) {
       final int idx = bg.getBlockIndices()[i];
       // for now we do not use redundant replica of an internal block
+      // 如果idx大于等于dataBlkNum + parityBlkNum， 那么lbs[idx] == null
       if (idx < (dataBlkNum + parityBlkNum) && lbs[idx] == null) {
         lbs[idx] = constructInternalBlock(bg, i, cellSize,
-            dataBlkNum, idx);
+            dataBlkNum, idx); // 这里一部分parity block可能还没有分配上dn， 查看BlockManager L2429
       }
     }
     return lbs;
@@ -143,7 +144,7 @@ public class StripedBlockUtil {
 
   /**
    * This method creates an internal block at the given index of a block group.
-   *
+   * 方法返回的LocatedBlock可能还没有分配上datanode
    * @param idxInReturnedLocs The index in the stored locations in the
    *                          {@link LocatedStripedBlock} object
    * @param idxInBlockGroup The logical index in the striped block group
@@ -185,7 +186,7 @@ public class StripedBlockUtil {
   public static ExtendedBlock constructInternalBlock(ExtendedBlock blockGroup,
       int cellSize, int dataBlkNum, int idxInBlockGroup) {
     ExtendedBlock block = new ExtendedBlock(blockGroup);
-    block.setBlockId(blockGroup.getBlockId() + idxInBlockGroup);
+    block.setBlockId(blockGroup.getBlockId() + idxInBlockGroup);// 这个block id是低四位不为0的block id
     block.setNumBytes(getInternalBlockLength(blockGroup.getNumBytes(),
         cellSize, dataBlkNum, idxInBlockGroup));
     return block;
@@ -253,7 +254,7 @@ public class StripedBlockUtil {
 
   /**
    *
-   * @param size 最后一个stripe的数据大小
+   * @param size 最后一个stripe的数据量大小，由于是最后一个Stripe, 因此很有可能不等于cellSize * cellSize
    * @param cellSize 一个cell的大小
    * @param numDataBlocks dataBlock的数量
    * @param i 序号

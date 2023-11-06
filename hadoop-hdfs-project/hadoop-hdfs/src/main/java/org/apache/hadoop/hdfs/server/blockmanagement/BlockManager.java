@@ -1062,10 +1062,10 @@ public class BlockManager implements BlockStatsMXBean {
 
   private short getMinMaintenanceStorageNum(BlockInfo block) {
     if (block.isStriped()) {
-      return ((BlockInfoStriped) block).getRealDataBlockNum();
+      return ((BlockInfoStriped) block).getRealDataBlockNum(); // stripe block实际占用数据的块的数量
     } else {
       return (short) Math.min(minReplicationToBeInMaintenance,
-          block.getReplication());
+          block.getReplication()); // 或者是replication factor, 或者是最小允许的进入MAINTENANCE状态live replica的数量
     }
   }
 
@@ -1994,7 +1994,7 @@ public class BlockManager implements BlockStatsMXBean {
    */
   @VisibleForTesting
   int computeReconstructionWorkForBlocks(
-      List<List<BlockInfo>> blocksToReconstruct) {
+      List<List<BlockInfo>> blocksToReconstruct) { // 按照优先级进行排列的，每一个List<BlockInfo>都是这个对应优先级的block的列表
     int scheduledWork = 0;
     List<BlockReconstructionWork> reconWork = new ArrayList<>();
 
@@ -2090,6 +2090,12 @@ public class BlockManager implements BlockStatsMXBean {
         (pendingReplicaNum > 0 || isPlacementPolicySatisfied(block));
   }
 
+  /**
+   * 这个方法主要是确定src nodes，还没有到确认target node的阶段
+   * @param block
+   * @param priority
+   * @return
+   */
   @VisibleForTesting
   BlockReconstructionWork scheduleReconstruction(BlockInfo block,
       int priority) {
@@ -2131,11 +2137,11 @@ public class BlockManager implements BlockStatsMXBean {
       return null;
     }
 
-    int additionalReplRequired;
-    if (numReplicas.liveReplicas() < requiredRedundancy) {
+    int additionalReplRequired; // 还需要多少个replica
+    if (numReplicas.liveReplicas() < requiredRedundancy) { // 当前的live replica还不够requiredRedundancy的数量
       additionalReplRequired = requiredRedundancy - numReplicas.liveReplicas()
           - pendingNum;
-    } else {
+    } else { // 尽管副本总数量够了，但是有可能按照Placement policy,副本的位置不符合要求
       // Violates placement policy. Needed on a new rack or domain etc.
       BlockPlacementStatus placementStatus = getBlockPlacementStatus(block);
       additionalReplRequired = placementStatus.getAdditionalReplicasRequired();
@@ -2160,6 +2166,7 @@ public class BlockManager implements BlockStatsMXBean {
       final DatanodeDescriptor[] newSrcNodes =
           new DatanodeDescriptor[srcNodes.length];
       byte[] newIndices = new byte[liveBlockIndices.size()];
+      // 对srcNodes和liveBlockIndices进行重新调整，保证srcNodes前面的节点都是不重复的节点
       adjustSrcNodesAndIndices((BlockInfoStriped)block,
           srcNodes, liveBlockIndices, newSrcNodes, newIndices);
       byte[] busyIndices = new byte[liveBusyBlockIndices.size()];
@@ -2180,25 +2187,30 @@ public class BlockManager implements BlockStatsMXBean {
    * Adjust srcNodes and indices which are used to reconstruction block.
    * We should guarantee the indexes of first minRequiredSources nodes
    + are different.
+   // 保证前面的minRequiredSources的节点是不同的
    */
   private void adjustSrcNodesAndIndices(BlockInfoStriped block,
-      DatanodeDescriptor[] srcNodes, List<Byte> indices,
+      DatanodeDescriptor[] srcNodes,
+      // indices中存放在chooseSourceDatanodes()中选择出来的这个striped block中可以作为source的internal block在group中的index
+      List<Byte> indices,
       DatanodeDescriptor[] newSrcNodes, byte[] newIndices) {
     BitSet bitSet = new BitSet(block.getRealTotalBlockNum());
     List<Integer> skipIndexList = new ArrayList<>();
     for (int i = 0, j = 0; i < srcNodes.length; i++) {
-      if (!bitSet.get(indices.get(i))) {
+      if (!bitSet.get(indices.get(i))) {// indices的value是intern block在group中的index
         bitSet.set(indices.get(i));
+        // newIndices[j]的值是对应的internal block在group中的index，newSrcNodes[j]存放了对应的DN, 所以newSrcNodes[j]和newIndices[j]通过索引联系起来
         newSrcNodes[j] = srcNodes[i];
         newIndices[j++] = indices.get(i);
       } else {
-        skipIndexList.add(i);
+        skipIndexList.add(i);//发现indices[i]的值和前面的某个值重复了，把索引值存放到skipIndexList中去
       }
     }
+    // 对于最后几个重复的值
     for(int i = srcNodes.length - skipIndexList.size(), j = 0;
         i < srcNodes.length; i++, j++) {
       newSrcNodes[i] = srcNodes[skipIndexList.get(j)];
-      newIndices[i] = indices.get(skipIndexList.get(j));
+      newIndices[i] = indices.get(skipIndexList.get(j));// 剩下几个节点的newSrcNodes和newIndices一一对应起来
     }
   }
 
@@ -2297,7 +2309,7 @@ public class BlockManager implements BlockStatsMXBean {
    *      Set, long, List, BlockStoragePolicy, EnumSet)
    */
   public DatanodeStorageInfo[] chooseTarget4NewBlock(final String src,
-      final int numOfReplicas, final Node client,
+      final int numOfReplicas, final Node client,// numOfReplicas在stripe场景下就是data unit + parity unit
       final Set<Node> excludedNodes,
       final long blocksize,
       final List<String> favoredNodes,
@@ -2311,6 +2323,7 @@ public class BlockManager implements BlockStatsMXBean {
         storagePolicySuite.getPolicy(storagePolicyID);
     final BlockPlacementPolicy blockplacement =
         placementPolicies.getPolicy(blockType);
+    // 根据block放置策略和要求的节点数量，选择节点
     final DatanodeStorageInfo[] targets = blockplacement.chooseTarget(src,
         numOfReplicas, client, excludedNodes, blocksize, 
         favoredDatanodeDescriptors, storagePolicy, flags);
@@ -2318,13 +2331,14 @@ public class BlockManager implements BlockStatsMXBean {
     final String errorMessage = "File %s could only be written to %d of " +
         "the %d %s. There are %d datanode(s) running and %s "
         + "node(s) are excluded in this operation.";
+    // 分配的节点数量不够
     if (blockType == BlockType.CONTIGUOUS && targets.length < minReplication) {
       throw new IOException(String.format(errorMessage, src,
           targets.length, minReplication, "minReplication nodes",
           getDatanodeManager().getNetworkTopology().getNumOfLeaves(),
           (excludedNodes == null? "no": excludedNodes.size())));
     } else if (blockType == BlockType.STRIPED &&
-        targets.length < ecPolicy.getNumDataUnits()) {
+        targets.length < ecPolicy.getNumDataUnits()) { // 这里，仅仅当分配的节点数量小于dataunit 的数量才会报错。为啥？
       throw new IOException(
           String.format(errorMessage, src, targets.length,
               ecPolicy.getNumDataUnits(),
@@ -2469,7 +2483,8 @@ public class BlockManager implements BlockStatsMXBean {
         countLiveAndDecommissioningReplicas(numReplicas, state,
             liveBitSet, decommissioningBitSet, blockIndex);
       }
-
+      // 只要这个优先级不是最高，并且节点不是处在decommissioning和entering_maintenance的状态，
+      // 并且当前这个节点上pending的replica数量超过了maxReplicationStreams，那么就不能把这个节点放到候选节点中
       if (priority != LowRedundancyBlocks.QUEUE_HIGHEST_PRIORITY
           && (!node.isDecommissionInProgress() && !node.isEnteringMaintenance())
           && node.getNumberOfBlocksToBeReplicated() >= maxReplicationStreams) {
@@ -2477,9 +2492,11 @@ public class BlockManager implements BlockStatsMXBean {
             || state == StoredReplicaState.DECOMMISSIONING)) {
           liveBusyBlockIndices.add(blockIndex);
         }
-        continue; // already reached replication limit
+        continue; // already reached replication limit 已经超过限制，查看下一个节点
       }
 
+      // 这个节点上pending的和正在进行replica的stream数量超过了限制，放弃
+      // replicationStreamsHardLimit是任何时候（包括最高优先级的replication）都不能超过的限制
       if (node.getNumberOfBlocksToBeReplicated() >= replicationStreamsHardLimit) {
         if (isStriped && (state == StoredReplicaState.LIVE
             || state == StoredReplicaState.DECOMMISSIONING)) {
@@ -2491,7 +2508,7 @@ public class BlockManager implements BlockStatsMXBean {
       if(isStriped || srcNodes.isEmpty()) {
         srcNodes.add(node);
         if (isStriped) {
-          liveBlockIndices.add(blockIndex);
+          liveBlockIndices.add(blockIndex); // 加入到healthy block中
         }
         continue;
       }
@@ -3820,7 +3837,7 @@ public class BlockManager implements BlockStatsMXBean {
       return MisReplicationResult.UNDER_CONSTRUCTION;
     }
     // calculate current redundancy
-    short expectedRedundancy = getExpectedRedundancyNum(block);
+    short expectedRedundancy = getExpectedRedundancyNum(block);// 如果是striped block，返回的是data block num
     NumberReplicas num = countNodes(block);
     final int numCurrentReplica = num.liveReplicas();
     // add to low redundancy queue if need to be
@@ -4332,7 +4349,8 @@ public class BlockManager implements BlockStatsMXBean {
    * striped block group. But note we exclude duplicated internal block replicas
    * for calculating {@link NumberReplicas#liveReplicas}. If the replica on a
    * decommissioning node is the same as the replica on a live node, the
-   * internal block for this replica is live, not decommissioning. // 如果一个replica既在一个live node上，也在一个decommssioning node上，那么这个replica的状态是live, 不是decommission
+   * internal block for this replica is live, not decommissioning.
+   * 如果一个replica既在一个live node上，也在一个decommssioning node上，那么这个replica的状态是live, 不是decommission
    */
   public NumberReplicas countNodes(BlockInfo b) {
     return countNodes(b, false);
@@ -4794,11 +4812,16 @@ public class BlockManager implements BlockStatsMXBean {
 
   // Exclude maintenance, but make sure it has minimal live replicas
   // to satisfy the maintenance requirement.
+  // 可容忍的最少的live replica的数量
   public short getExpectedLiveRedundancyNum(BlockInfo block,
       NumberReplicas numberReplicas) {
+    // 对于striped block，reduncy 数量指的是data block的数量
     final short expectedRedundancy = getExpectedRedundancyNum(block);
+    // 假如当前我的block配置的副本是5， 有2个副本是处于maintenance，那么我期待的live 副本数量是5-2=3
     return (short)Math.max(expectedRedundancy -
         numberReplicas.maintenanceReplicas(),
+        // 最小的maintenance 副本数量。对于striped block，最小的maintenance副本数量就是data block 的数量，说明对于
+            // stripe block, 不需与data block丢失
         getMinMaintenanceStorageNum(block));
   }
 
@@ -4828,7 +4851,7 @@ public class BlockManager implements BlockStatsMXBean {
 
   public BlockInfo addBlockCollection(BlockInfo block,
       BlockCollection bc) {
-    BlockInfo blockInfo = blocksMap.addBlockCollection(block, bc);
+    BlockInfo blockInfo = blocksMap.addBlockCollection(block, bc); // 把这个block加到blocksMap中去
     blockIdManager.setGenerationStampIfGreater(block.getGenerationStamp());
     return blockInfo;
   }

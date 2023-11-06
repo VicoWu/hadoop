@@ -41,6 +41,7 @@ import java.util.NoSuchElementException;
  * However, it is possible that some block is over-replicated. Thus the triplet
  * array's size can be larger than (m+k). Thus currently we use an extra byte
  * array to record the block index for each triplet.
+ * 这里一个BlockInfoStriped代表的是一个logical block
  */
 @InterfaceAudience.Private
 public class BlockInfoStriped extends BlockInfo {
@@ -84,7 +85,7 @@ public class BlockInfoStriped extends BlockInfo {
    */
   public short getRealDataBlockNum() {
     if (isComplete() || getBlockUCState() == BlockUCState.COMMITTED) {
-      return (short) Math.min(getDataBlockNum(), // 如果这个block的数据部分所占用的cell的数量大于ecSchema中一个Stripe的cell的总size，那么就是ecschema的data unit的数量
+      return (short) Math.min(getDataBlockNum(), // 如果这个block的数据部分所占用的cell的数量大于ecSchema中一个Stripe的cell的总size，那么就是ec schema的data unit的数量
           (getNumBytes() - 1) / ecPolicy.getCellSize() + 1); // 如果这个block的数据部分所占用的cell的数量小于ecSchema中一个Stripe的cell的总size，那么以实际数量为准
     } else {
       return getDataBlockNum();

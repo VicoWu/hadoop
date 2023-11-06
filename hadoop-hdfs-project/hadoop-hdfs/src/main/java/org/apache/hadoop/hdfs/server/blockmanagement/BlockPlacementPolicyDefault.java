@@ -434,6 +434,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
    * @param avoidStaleNodes avoid stale nodes in replica choosing
    * @param storageTypes storage type to be considered for target
    * @return local node of writer (not chosen node)
+   * 对于EC的chooseTargetInOrder()的BlockPlacementPolicyRackFaultTolerant.chooseTargetInOrder()
    */
   private Node chooseTarget(final int numOfReplicas,
                             Node writer,

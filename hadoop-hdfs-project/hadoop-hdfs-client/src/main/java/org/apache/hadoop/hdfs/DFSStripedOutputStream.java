@@ -77,6 +77,9 @@ import java.util.concurrent.TimeUnit;
 /**
  * This class supports writing files in striped layout and erasure coded format.
  * Each stripe contains a sequence of cells.
+ * 虽然一个DFSStripedOutputStream对应了多个DataStreamer, 但是它始终通过streamer和currentPacket来标记当前正在写的packet和负责这个packet的streamer。因此可以看到，
+ * 虽然一个Packet是64KB, 然后一个cell可能比Packet小，但是，一个Packet作为最小的发送单元，这个Packet只有可能是属于某一个internal block,不可能跨域internal block,否则
+ * 这个packet 是属于不同的DN的
  */
 @InterfaceAudience.Private
 public class DFSStripedOutputStream extends DFSOutputStream
@@ -99,7 +102,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
       }
     }
 
-    void offer(int i, T object) {
+    void offer(int i, T object) { // 向index = i的BlockingQueue中添加一个LocatedBlock(internal block)
       final boolean b = queues.get(i).offer(object);
       Preconditions.checkState(b, "Failed to offer " + object
           + " to queue, i=" + i);
@@ -143,8 +146,9 @@ public class DFSStripedOutputStream extends DFSOutputStream
      * DFSStripedOutputStream makes the {@link ClientProtocol#addBlock} RPC to
      * get a new block group. The block group is split to internal blocks, which
      * are then distributed into the queue for streamers to retrieve.
+     * followingBlocks是一个List<BlockingQueue<T>> queues，每一个BlockingQueue代表index=i的多个LocatedBlock
      */
-    private final MultipleBlockingQueue<LocatedBlock> followingBlocks;
+    private final MultipleBlockingQueue<LocatedBlock> followingBlocks; // 指的是block group的下一个internal block， 每一个index对应了一系列block的list
     /**
      * Used to sync among all the streamers before allocating a new block. The
      * DFSStripedOutputStream uses this to make sure every streamer has finished
@@ -159,7 +163,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
     private final Map<StripedDataStreamer, Boolean> updateStreamerMap;
     private final MultipleBlockingQueue<Boolean> streamerUpdateResult;
 
-    Coordinator(final int numAllBlocks) {
+    Coordinator(final int numAllBlocks) { // 这里的numAllBlocks指的是一个logical Block的internal block的数量
       followingBlocks = new MultipleBlockingQueue<>(numAllBlocks, 1);
       endBlocks = new MultipleBlockingQueue<>(numAllBlocks, 1);
       newBlocks = new MultipleBlockingQueue<>(numAllBlocks, 1);
@@ -233,12 +237,20 @@ public class DFSStripedOutputStream extends DFSOutputStream
       return checksumArrays[i - numDataBlocks];
     }
 
+    /**
+     * 将byte[] b中的数据写入到i对应的 buffer中去
+     * @param i
+     * @param b
+     * @param off
+     * @param len
+     * @return
+     */
     private int addTo(int i, byte[] b, int off, int len) {
       final ByteBuffer buf = buffers[i];
       final int pos = buf.position() + len;
       Preconditions.checkState(pos <= cellSize);
       buf.put(b, off, len);
-      return pos;
+      return pos; // 返回数据写完以后新的position
     }
 
     private void clear() {
@@ -265,13 +277,14 @@ public class DFSStripedOutputStream extends DFSOutputStream
   }
 
   private final Coordinator coordinator;
-  private final CellBuffers cellBuffers;
+  private final CellBuffers cellBuffers;// cellbuffers中的ByteBuffer[] 为每一个index构建一个ByteBuffer
   private final ErasureCodingPolicy ecPolicy;
   private final RawErasureEncoder encoder;
   private final List<StripedDataStreamer> streamers;
   private final DFSPacket[] currentPackets; // current Packet of each streamer
 
   // Size of each striping cell, must be a multiple of bytesPerChecksum.
+  // bytesPerChecksum表示做一个checksum的数据单位的长度，cellsize必须是它的整数倍
   private final int cellSize;
   private final int numAllBlocks;
   private final int numDataBlocks;
@@ -299,7 +312,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
     final int numParityBlocks = ecPolicy.getNumParityUnits();
     cellSize = ecPolicy.getCellSize();
     numDataBlocks = ecPolicy.getNumDataUnits();
-    numAllBlocks = numDataBlocks + numParityBlocks;
+    numAllBlocks = numDataBlocks + numParityBlocks; // numAllBlocks指的是一个logical block中的所有的 physical block的数量
     this.favoredNodes = favoredNodes;
     failedStreamers = new ArrayList<>();
     corruptBlockCountMap = new LinkedHashMap<>();
@@ -313,10 +326,10 @@ public class DFSStripedOutputStream extends DFSOutputStream
         ecPolicy.getCodecName(), coderOptions);
 
     coordinator = new Coordinator(numAllBlocks);
-    cellBuffers = new CellBuffers(numParityBlocks);
+    cellBuffers = new CellBuffers(numParityBlocks);// 虽然初始化是用的numParityBlocks， 其实内部放的是datablock 和 parity block
 
-    streamers = new ArrayList<>(numAllBlocks);
-    for (short i = 0; i < numAllBlocks; i++) {
+    streamers = new ArrayList<>(numAllBlocks);// 并行写一个logical block中的所有internal block，但是串型写不同的logical block
+    for (short i = 0; i < numAllBlocks; i++) { // 每一个physical block会有一个DataStreamer与之对应，即StrippedDataStreamer对象，用来与对应的DN进行流数据写操作
       StripedDataStreamer streamer = new StripedDataStreamer(stat,
           dfsClient, src, progress, checksum, cachingStrategy, byteArrayManager,
           favoredNodes, i, coordinator, getAddBlockFlags());
@@ -376,7 +389,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
    */
   private static void encode(RawErasureEncoder encoder, int numData,
       ByteBuffer[] buffers) throws IOException {
-    final ByteBuffer[] dataBuffers = new ByteBuffer[numData];
+    final ByteBuffer[] dataBuffers = new ByteBuffer[numData]; // 这是一个ByteBuffer 的数组
     final ByteBuffer[] parityBuffers = new ByteBuffer[buffers.length - numData];
     System.arraycopy(buffers, 0, dataBuffers, 0, dataBuffers.length);
     System.arraycopy(buffers, numData, parityBuffers, 0, parityBuffers.length);
@@ -482,7 +495,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
   }
 
   /**
-   * 在Stripe存里面，block的意思其实是block group
+   * 在Stripe存里面，block的意思其实是block group，这里是为一个Block group分配datanode
    * @throws IOException
    */
   private void allocateNewBlock() throws IOException {
@@ -509,6 +522,8 @@ public class DFSStripedOutputStream extends DFSOutputStream
         + prevBlockGroup);
     final LocatedBlock lb;
     try {
+      // 向NameNode申请Block.对于Stripped的场景，是申请一个BlockGroup(Login block)
+      // 这个addBlock是调用的super class的addBlock(), 即DFSStrippedOutputStream和DFSOutputStream都是一样的addBlock()逻辑
       lb = addBlock(excludedNodes, dfsClient, src,
           prevBlockGroup, fileId, favoredNodes, getAddBlockFlags());
     } catch (IOException ioe) {
@@ -519,7 +534,8 @@ public class DFSStripedOutputStream extends DFSOutputStream
     // assign the new block to the current block group
     currentBlockGroup = lb.getBlock();
     blockGroupIndex++;
-
+    // 从申请到的LocatedBlock(对应了一个Block Group)切分出Internal block
+    // 这里的blocks的索引已经是跟internal block在group中的索引一致了
     final LocatedBlock[] blocks = StripedBlockUtil.parseStripedBlockGroup(
         (LocatedStripedBlock) lb, cellSize, numDataBlocks,
         numAllBlocks - numDataBlocks);
@@ -529,7 +545,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
       if (blocks[i] == null) {
         // allocBlock() should guarantee that all data blocks are successfully
         // allocated.
-        assert i >= numDataBlocks;
+        assert i >= numDataBlocks; // 不可能有data block没有分配上
         // Set exception and close streamer as there is no block locations
         // found for the parity block.
         LOG.warn("Cannot allocate parity block(index={}, policy={}). " +
@@ -543,6 +559,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
         si.getErrorState().setInternalError();
         si.close(true);
       } else {
+        // 把这个Block group里面的所有的internal block分配给每一个streamer
         coordinator.getFollowingBlocks().offer(i, blocks[i]);
       }
     }
@@ -553,11 +570,18 @@ public class DFSStripedOutputStream extends DFSOutputStream
         currentBlockGroup.getNumBytes() == blockSize * numDataBlocks;
   }
 
+  /**
+   * chunk是计算checksum的单位，以chunk为单位计算checksum，以packet为单位发送数据
+   * 将bytes中[offset, offset+len]的数据作为一个chunk写入packet(从调用者的代码可以看到，这个数据只可能小于等于一个chunk的长度)
+   * 通过currentPacket和currentStream来确定是由哪个streamer来负责写这个数据
+   *
+   * @throws IOException
+   */
   @Override
   protected synchronized void writeChunk(byte[] bytes, int offset, int len,
       byte[] checksum, int ckoff, int cklen) throws IOException {
     final int index = getCurrentIndex();
-    final int pos = cellBuffers.addTo(index, bytes, offset, len);
+    final int pos = cellBuffers.addTo(index, bytes, offset, len); // 往data block中写入数据，返回更新以后的position
     final boolean cellFull = pos == cellSize;
 
     //  如果是第一个block，或者当前的block group写完了，需要写到一个新的block group，那么就创建一个新的
@@ -571,6 +595,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
     final StripedDataStreamer current = getCurrentStreamer();
     if (current.isHealthy()) {
       try {
+        // 将当前的chunk写入到Packet中（不代表packet需要enqueue了。）
         super.writeChunk(bytes, offset, len, checksum, ckoff, cklen);
       } catch(Exception e) {
         handleCurrentStreamerFailure("offset=" + offset + ", length=" + len, e);
@@ -580,12 +605,13 @@ public class DFSStripedOutputStream extends DFSOutputStream
     // Two extra steps are needed when a striping cell is full:
     // 1. Forward the current index pointer
     // 2. Generate parity packets if a full stripe of data cells are present
-    if (cellFull) {
+    if (cellFull) { // cell写满了，需要将stream切到下一个
       int next = index + 1;
       //When all data cells in a stripe are ready, we need to encode
       //them and generate some parity cells. These cells will be
       //converted to packets and put to their DataStreamer's queue.
-      if (next == numDataBlocks) {
+      // 如果不是最后一个data block, 是不需要写parity chunk的
+      if (next == numDataBlocks) { // 刚刚写的是这个logic group中的最后一个data block的chunk，意味着下一个chunk是写parity block的chunk
         cellBuffers.flipDataBuffers();
         writeParityCells();
         next = 0;
@@ -607,7 +633,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
           checkStreamerFailures(true);
         }
       }
-      setCurrentStreamer(next);
+      setCurrentStreamer(next);// 将当前stream切换到下一个，因为当前cell写满了。不写满不切换stream
     }
   }
 
@@ -1143,7 +1169,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
     }
     //encode the data cells
     encode(encoder, numDataBlocks, buffers);
-    for (int i = numDataBlocks; i < numAllBlocks; i++) {
+    for (int i = numDataBlocks; i < numAllBlocks; i++) { // 写当前的logic block中的一个stripe的所有parity block
       writeParity(i, buffers[i], cellBuffers.getChecksumArray(i));
     }
     cellBuffers.clear();
@@ -1151,7 +1177,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
 
   private boolean checkAnyParityStreamerIsHealthy() {
     for (int i = numDataBlocks; i < numAllBlocks; i++) {
-      if (streamers.get(i).isHealthy()) {
+      if (streamers.get(i).isHealthy()) { // 从这里看到，写parity的streamer是独立的streamer
         return true;
       }
     }
@@ -1162,9 +1188,17 @@ public class DFSStripedOutputStream extends DFSOutputStream
     return false;
   }
 
+  /**
+   * 这个i代表的是在group中的internal block的索引，因此在写parity的时候，index从numDataBlocks开始
+   * 给parity计算checksum，并写入到packet中去
+   * @param index
+   * @param buffer
+   * @param checksumBuf
+   * @throws IOException
+   */
   void writeParity(int index, ByteBuffer buffer, byte[] checksumBuf)
       throws IOException {
-    final StripedDataStreamer current = setCurrentStreamer(index);
+    final StripedDataStreamer current = setCurrentStreamer(index); // 获取到写当前这个internal parity block的streamer
     final int len = buffer.limit();
 
     final long oldBytes = current.getBytesCurBlock();
@@ -1174,18 +1208,18 @@ public class DFSStripedOutputStream extends DFSOutputStream
         if (buffer.isDirect()) {
           ByteBuffer directCheckSumBuf =
               BUFFER_POOL.getBuffer(true, checksumBuf.length);
-          sum.calculateChunkedSums(buffer, directCheckSumBuf);
-          directCheckSumBuf.get(checksumBuf);
-          BUFFER_POOL.putBuffer(directCheckSumBuf);
+          sum.calculateChunkedSums(buffer, directCheckSumBuf);// 计算checksum，放在directCheckSumBuf
+          directCheckSumBuf.get(checksumBuf);// 把数据从directCheckSumBuf拷贝到 checksumBuf
+          BUFFER_POOL.putBuffer(directCheckSumBuf);// 释放directCheckSumBuf到pool中去
         } else {
           sum.calculateChunkedSums(buffer.array(), 0, len, checksumBuf, 0);
         }
 
         for (int i = 0; i < len; i += sum.getBytesPerChecksum()) {
           int chunkLen = Math.min(sum.getBytesPerChecksum(), len - i);
-          int ckOffset = i / sum.getBytesPerChecksum() * getChecksumSize();
-          super.writeChunk(buffer, chunkLen, checksumBuf, ckOffset,
-              getChecksumSize());
+          int ckOffset = i / sum.getBytesPerChecksum() * getChecksumSize(); // 确定在checksum数组中的位置
+          super.writeChunk(buffer, chunkLen, checksumBuf, ckOffset, // 写入parity. 此时parity跟普通的internal block是一样的，没有差别
+              getChecksumSize()); // 将chunk伴随checksum写入到当前的packet中，所以，data chunk和parity chunk是无差别地写入到相同的packet中去的
         }
       } catch(Exception e) {
         handleCurrentStreamerFailure("oldBytes=" + oldBytes + ", len=" + len,

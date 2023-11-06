@@ -42,7 +42,11 @@ public class BlockUnderConstructionFeature {
   /**
    * Block replicas as assigned when the block was allocated.
    */
-  private ReplicaUnderConstruction[] replicas = NO_REPLICAS;
+  /**
+   * 对于continuous， replicas中存放的就是这个replica的每一个副本的信息
+   * 对于stripped, replicas存放的就是这个block group中的每一个replicaBlock的位置信息
+   */
+  private ReplicaUnderConstruction[] replicas = NO_REPLICAS;// replicas的数量是分配到的target的数量
 
   /**
    * Index of the primary data node doing the recovery. Useful for log
@@ -71,6 +75,12 @@ public class BlockUnderConstructionFeature {
   }
 
   /** Set expected locations */
+  /**
+   * 把每一个replica和datanode info对应起来
+   * @param block
+   * @param targets
+   * @param blockType
+   */
   public void setExpectedLocations(Block block, DatanodeStorageInfo[] targets,
       BlockType blockType) {
     if (targets == null) {
@@ -82,18 +92,18 @@ public class BlockUnderConstructionFeature {
         numLocations++;
       }
     }
-
+    // replicas的大小等于分配到的targets的大小？为啥
     this.replicas = new ReplicaUnderConstruction[numLocations];
     int offset = 0;
-    for(int i = 0; i < targets.length; i++) {
+    for(int i = 0; i < targets.length; i++) { // 分配了几个节点，group里面就有几个internal block？
       if (targets[i] != null) {
         // when creating a new striped block we simply sequentially assign block
         // index to each storage
         Block replicaBlock = blockType == BlockType.STRIPED ?
             new Block(block.getBlockId() + i, 0, block.getGenerationStamp()) :
-            block;
+            block; // 对于Stripped block, 这个i其实指的是block group里面的block的index
         replicas[offset++] = new ReplicaUnderConstruction(replicaBlock,
-            targets[i], ReplicaState.RBW);
+            targets[i], ReplicaState.RBW); //对于这时候的block，block id就已经修正为block group + block index in group
       }
     }
   }
@@ -137,11 +147,15 @@ public class BlockUnderConstructionFeature {
   /**
    * @return the index array indicating the block index in each storage. Used
    * only by striped blocks.
+   * 只有stripped block才需要这个方法
    */
   public byte[] getBlockIndices() {
+    // 查看L78 setExpectedLocations()
     int numLocations = getNumExpectedLocations();
     byte[] indices = new byte[numLocations];
     for (int i = 0; i < numLocations; i++) {
+      // indices[i]代表了replicas[i]对应的replica的internal block index
+      // 查看L99
       indices[i] = BlockIdManager.getBlockIndex(replicas[i]);
     }
     return indices;

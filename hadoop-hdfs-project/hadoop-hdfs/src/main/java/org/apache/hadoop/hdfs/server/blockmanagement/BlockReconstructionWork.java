@@ -30,6 +30,7 @@ import java.util.Set;
  * {@link BlockManager#computeReconstructionWorkForBlocks} to represent a
  * task to reconstruct a block through replication or erasure coding.
  * Reconstruction is done by transferring data from srcNodes to targets
+ * 这个类被ErasureCodingWork和ReplicationWork进行了重载
  */
 abstract class BlockReconstructionWork {
 
@@ -45,6 +46,7 @@ abstract class BlockReconstructionWork {
   /**
    * An erasure coding reconstruction task has multiple source nodes.
    * A replication task only has 1 source node, stored on top of the array
+   * 在进行重算的时候，需要从srcNode拉取internal data block或者internal parity block
    */
   private final DatanodeDescriptor[] srcNodes;
   /** Nodes containing the block; avoid them in choosing new targets */

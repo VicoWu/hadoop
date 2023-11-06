@@ -282,6 +282,7 @@ public interface HdfsServerConstants {
 
   /**
    * Block replica states, which it can go through while being constructed.
+   * 区分ReplicaState和BlockUCState
    */
   enum ReplicaState {
     /** Replica is finalized. The state when replica is not modified. */
@@ -347,6 +348,7 @@ public interface HdfsServerConstants {
 
   /**
    * States, which a block can go through while it is under construction.
+   * 区分ReplicaState和BlockUCState
    */
   enum BlockUCState {
     /**
@@ -357,12 +359,12 @@ public interface HdfsServerConstants {
      * NOTE, in some special cases, a block may be forced to COMPLETE state,
      * even if it doesn't have required minimal replications.
      */
-    COMPLETE,
+    COMPLETE, // block的构建完成，block的FINALIZED的副本数量已经达到了最小副本数量，这是block的最后的稳定状态
     /**
      * The block is under construction.<br>
      * It has been recently allocated for write or append.
      */
-    UNDER_CONSTRUCTION,
+    UNDER_CONSTRUCTION, //这个block应该正处于被写的状态
     /**
      * The block is under recovery.<br>
      * When a file lease expires its last block may not be {@link #COMPLETE}
@@ -377,7 +379,7 @@ public interface HdfsServerConstants {
      * {@link ReplicaState#FINALIZED} 
      * replicas has yet been reported by data-nodes themselves.
      */
-    COMMITTED
+    COMMITTED //  客户端已经写完了，但是还没有DataNode收到确认的汇报，这个状态较COMPLETE要更早
   }
   
   String NAMENODE_LEASE_HOLDER = "HDFS_NameNode";

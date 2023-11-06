@@ -34,9 +34,10 @@ class ErasureCodingWork extends BlockReconstructionWork {
   private final byte[] liveBusyBlockIndicies;
   private final String blockPoolId;
 
-  public ErasureCodingWork(String blockPoolId, BlockInfo block,
+  public ErasureCodingWork(String blockPoolId,
+                           BlockInfo block,
       BlockCollection bc,
-      DatanodeDescriptor[] srcNodes,
+      DatanodeDescriptor[] srcNodes,// srcNodes.size()和liveBlockIndicies.size()一样，并且liveBlockIndicies相同位置的值就是对应的internal block在group中的位置
       List<DatanodeDescriptor> containingNodes,
       List<DatanodeStorageInfo> liveReplicaStorages,
       int additionalReplRequired, int priority,
@@ -59,6 +60,7 @@ class ErasureCodingWork extends BlockReconstructionWork {
       BlockStoragePolicySuite storagePolicySuite,
       Set<Node> excludedNodes) {
     // TODO: new placement policy for EC considering multiple writers
+    // BlockPlacementPolicyRackFaultTolerant.chooseTarget
     DatanodeStorageInfo[] chosenTargets = blockplacement.chooseTarget(
         getSrcPath(), getAdditionalReplRequired(), getSrcNodes()[0],
         getLiveReplicaStorages(), false, excludedNodes, getBlockSize(),
@@ -130,14 +132,16 @@ class ErasureCodingWork extends BlockReconstructionWork {
     assert targets.length > 0;
     BlockInfoStriped stripedBlk = (BlockInfoStriped) getBlock();
 
-    if (hasNotEnoughRack()) {
+    if (hasNotEnoughRack()) { // 这个任务仅仅是拷贝internal block到其它的rack，而不是重算缺失的replica
       // if we already have all the internal blocks, but not enough racks,
       // we only need to replicate one internal block to a new rack
       int sourceIndex = chooseSource4SimpleReplication();
       createReplicationWork(sourceIndex, targets[0]);
     } else if ((numberReplicas.decommissioning() > 0 ||
         numberReplicas.liveEnteringMaintenanceReplicas() > 0) &&
-        hasAllInternalBlocks()) {
+        hasAllInternalBlocks()) { // 包括了decommissioning和 MAINTENANCE_FOR_READ的状态的internal block都没有丢，那么是不需要重算的，
+      // 只需要把decommissioning 和 entering maintenance的节点上的internal block给复制出去
+      // leavingServiceSources是那些由于处于decommission或者maintenance因此需要将对应的internal block从上面拷贝出去的节点
       List<Integer> leavingServiceSources = findLeavingServiceSources();
       // decommissioningSources.size() should be >= targets.length
       final int num = Math.min(leavingServiceSources.size(), targets.length);
@@ -145,12 +149,19 @@ class ErasureCodingWork extends BlockReconstructionWork {
         createReplicationWork(leavingServiceSources.get(i), targets[i]);
       }
     } else {
+      // 将ec解码的任务交给第一个target数组中的第一个target，这个target会负责从所有的source中拉取internal block，经过decode，然后把数据写入到target中去
       targets[0].getDatanodeDescriptor().addBlockToBeErasureCoded(
           new ExtendedBlock(blockPoolId, stripedBlk), getSrcNodes(), targets,
           getLiveBlockIndicies(), stripedBlk.getErasureCodingPolicy());
     }
   }
 
+  /**
+   * 虽然是EC 编码，但是由于sourceIndex节点进入maintenance或者decommioning，因此需要将它对应的block
+   * replicate到target节点上去
+   * @param sourceIndex
+   * @param target
+   */
   private void createReplicationWork(int sourceIndex,
       DatanodeStorageInfo target) {
     BlockInfoStriped stripedBlk = (BlockInfoStriped) getBlock();
@@ -170,10 +181,10 @@ class ErasureCodingWork extends BlockReconstructionWork {
   private List<Integer> findLeavingServiceSources() {
     // Mark the block in normal node.
     BlockInfoStriped block = (BlockInfoStriped)getBlock();
-    BitSet bitSet = new BitSet(block.getRealTotalBlockNum());
+    BitSet bitSet = new BitSet(block.getRealTotalBlockNum());// data block number + parity block number
     for (int i = 0; i < getSrcNodes().length; i++) {
       if (getSrcNodes()[i].isInService()) {
-        bitSet.set(liveBlockIndicies[i]);
+        bitSet.set(liveBlockIndicies[i]);//
       }
     }
     // If the block is on the node which is decommissioning or

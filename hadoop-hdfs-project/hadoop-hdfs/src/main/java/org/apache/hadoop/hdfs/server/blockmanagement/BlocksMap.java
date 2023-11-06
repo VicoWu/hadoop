@@ -106,6 +106,7 @@ class BlocksMap {
 
   /**
    * Add block b belonging to the specified block collection to the map.
+   * b属于bc,
    */
   BlockInfo addBlockCollection(BlockInfo b, BlockCollection bc) {
     BlockInfo info = blocks.get(b);

@@ -79,8 +79,8 @@ public class INodesInPath {
    * @return INodesInPath
    */
   static INodesInPath fromINode(INode inode) {
-    INode[] inodes = getINodes(inode);
-    byte[][] paths = getPaths(inodes);
+    INode[] inodes = getINodes(inode); // 通过不断调用inode的 parent，构建这个inode所在路径的全部的inode.INode[0]是最底层目录
+    byte[][] paths = getPaths(inodes);// paths存放了这个inode的路径
     return new INodesInPath(inodes, paths);
   }
 
@@ -301,8 +301,8 @@ public class INodesInPath {
   private INodesInPath(INode[] inodes, byte[][] path, boolean isRaw,
       boolean isSnapshot,int snapshotId) {
     Preconditions.checkArgument(inodes != null && path != null);
-    this.inodes = inodes;
-    this.path = path;
+    this.inodes = inodes;// 这个路径上的全部inodes
+    this.path = path;// 路径上的全部名字，与 inodes一一对应
     this.isRaw = isRaw;
     this.isSnapshot = isSnapshot;
     this.snapshotId = snapshotId;

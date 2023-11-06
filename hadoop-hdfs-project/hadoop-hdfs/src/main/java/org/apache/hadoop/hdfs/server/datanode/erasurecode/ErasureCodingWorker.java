@@ -114,7 +114,7 @@ public final class ErasureCodingWorker {
 
   /**
    * Handles the Erasure Coding reconstruction work commands.
-   *
+   * 注意，一个ectask代表了一个internal block的恢复。而一个internal block的恢复需要从多个source上拉取数据
    * @param ecTasks BlockECReconstructionInfo
    *
    */

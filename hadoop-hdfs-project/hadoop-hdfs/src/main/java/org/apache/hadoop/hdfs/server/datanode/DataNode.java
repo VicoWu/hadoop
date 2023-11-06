@@ -1829,7 +1829,7 @@ public class DataNode extends ReconfigurableBase
    * Creates either NIO or regular depending on socketWriteTimeout.
    */
   public Socket newSocket() throws IOException {
-    return socketFactory.createSocket();
+    return socketFactory.createSocket(); //StandardSocketFactory
   }
 
   /**

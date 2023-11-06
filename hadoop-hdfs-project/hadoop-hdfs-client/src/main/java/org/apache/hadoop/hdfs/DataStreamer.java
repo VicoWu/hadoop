@@ -496,7 +496,7 @@ class DataStreamer extends Daemon {
   /** Append on an existing block? */
   private final boolean isAppend;
 
-  private long currentSeqno = 0;
+  private long currentSeqno = 0;// 序列号是per streamer的，而不是per FSDataOutputStream的
   private long lastQueuedSeqno = -1;
   private long lastAckedSeqno = -1;
   private long bytesCurBlock = 0; // bytes written in current block
@@ -512,6 +512,7 @@ class DataStreamer extends Daemon {
   // appending to existing partial block
   private volatile boolean appendChunk = false;
   // both dataQueue and ackQueue are protected by dataQueue lock
+  // 可以看到，一个dataQueue是属于一个DataStreamer(StripedDataStreamer), 而不是属于一个DFSOutputStream(DFSStripedOutputStream)
   protected final LinkedList<DFSPacket> dataQueue = new LinkedList<>();
   private final Map<Long, Long> packetSendTime = new HashMap<>();
   private final LinkedList<DFSPacket> ackQueue = new LinkedList<>();
@@ -561,6 +562,7 @@ class DataStreamer extends Daemon {
 
   /**
    * construction with tracing info
+   * 由于构造函数没有LocatedBlock，因此这个构造方法发生在客户端调用create的时候，即创建一个文件的 时候
    */
   DataStreamer(HdfsFileStatus stat, ExtendedBlock block, DFSClient dfsClient,
                String src, Progressable progress, DataChecksum checksum,
@@ -576,6 +578,7 @@ class DataStreamer extends Daemon {
    * Construct a data streamer for appending to the last partial block
    * @param lastBlock last block of the file to be appended
    * @param stat status of the file to be appended
+   * 由于构造函数有LocatedBlock，因此这个构造方法发生在往一个已有的block进行追加写的时候
    */
   DataStreamer(LocatedBlock lastBlock, HdfsFileStatus stat, DFSClient dfsClient,
                String src, Progressable progress, DataChecksum checksum,
@@ -685,7 +688,7 @@ class DataStreamer extends Daemon {
             continue;
           }
           // get packet to be sent.
-          one = dataQueue.getFirst(); // regular data packet
+          one = dataQueue.getFirst(); // 从当前的StripedDataStreamer中拿到packet， regular data packet
           SpanContext[] parents = one.getTraceParents();
           if (parents != null && parents.length > 0) {
             // The original code stored multiple parents in the DFSPacket, and
@@ -710,11 +713,11 @@ class DataStreamer extends Daemon {
 
         if (stage == BlockConstructionStage.PIPELINE_SETUP_CREATE) {
           LOG.debug("Allocating new block: {}", this);
-          setPipeline(nextBlockOutputStream());
+          setPipeline(nextBlockOutputStream());// 通过nextBlockOutputStream()来返回一个LocatedBlock,并基于这个LocatedBlock构建pipeline
           initDataStreaming();
         } else if (stage == BlockConstructionStage.PIPELINE_SETUP_APPEND) {
           LOG.debug("Append to block {}", block);
-          setupPipelineForAppendOrRecovery();
+          setupPipelineForAppendOrRecovery();// StripedDataBlock对这个方法进行了重载
           if (streamerClosed) {
             continue;
           }
@@ -1747,6 +1750,7 @@ class DataStreamer extends Daemon {
 
   // connects to the first datanode in the pipeline
   // Returns true if success, otherwise return failure.
+  // 只需要和第一个DN建立连接
   //
   boolean createBlockOutputStream(DatanodeInfo[] nodes,
       StorageType[] nodeStorageTypes, String[] nodeStorageIDs,
@@ -1771,7 +1775,7 @@ class DataStreamer extends Daemon {
       try {
         assert null == s : "Previous socket unclosed";
         assert null == blockReplyStream : "Previous blockReplyStream unclosed";
-        s = createSocketForPipeline(nodes[0], nodes.length, dfsClient);
+        s = createSocketForPipeline(nodes[0], nodes.length, dfsClient); // 基于第一个节点构建socket
         long writeTimeout = dfsClient.getDatanodeWriteTimeout(nodes.length);
         long readTimeout = dfsClient.getDatanodeReadTimeout(nodes.length);
 
@@ -1909,7 +1913,8 @@ class DataStreamer extends Daemon {
       return pinnings;
     }
   }
-
+  // DataStreamer在写的过程中发现需要创建新的block。
+  // 这个方法是一个静态方法，定义在DFSOutputStream，因为这个创建block的过程是通用的，无论是stripped还是continuous
   private LocatedBlock locateFollowingBlock(DatanodeInfo[] excluded,
       ExtendedBlock oldBlock) throws IOException {
     return DFSOutputStream.addBlock(excluded, dfsClient, src, oldBlock,
