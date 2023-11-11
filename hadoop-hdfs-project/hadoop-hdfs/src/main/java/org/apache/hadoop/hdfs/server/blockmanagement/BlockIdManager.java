@@ -260,8 +260,8 @@ public class BlockIdManager {
    */
   long nextBlockId(BlockType blockType) {
     switch(blockType) {
-    case CONTIGUOUS: return blockIdGenerator.nextValue();
-    case STRIPED: return blockGroupIdGenerator.nextValue(); // 下一个block group id
+    case CONTIGUOUS: return blockIdGenerator.nextValue(); //使用SequentialBlockIdGenerator为连续块布局方式分配Block ID
+    case STRIPED: return blockGroupIdGenerator.nextValue(); // 使用SequentialBlockGroupIdGenerator为条带布局方式分配Block ID
     default:
       throw new IllegalArgumentException(
           "nextBlockId called with an unsupported BlockType");

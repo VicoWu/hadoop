@@ -896,7 +896,7 @@ public class NameNodeRpcServer implements NamenodeProtocols {
   }
 
   /*
-  * NameNode处理addBlock的请求。这里，一个block请求指的是对一个Block Group的请求
+  * NameNode处理addBlock的请求。这里，一个block请求指的是对一个Block Group的请求,从代码来看，似乎并没有关系block大小的信息
   * */
   @Override
   public LocatedBlock addBlock(String src, String clientName,

@@ -111,7 +111,7 @@ public class DFSOutputStream extends FSOutputSummer
 
   protected final String src;
   protected final long fileId;
-  protected final long blockSize;
+  protected final long blockSize; // 这个block size经过测试也是128M,是在创建文件的时候通过newStreamForCreate()来构造的
   protected final int bytesPerChecksum;
 
   protected DFSPacket currentPacket = null;
@@ -192,7 +192,7 @@ public class DFSOutputStream extends FSOutputSummer
     this.dfsClient = dfsClient;
     this.src = src;
     this.fileId = stat.getFileId();
-    this.blockSize = stat.getBlockSize();
+    this.blockSize = stat.getBlockSize(); // 这个block size经过测试也是128M,是在创建文件的时候通过newStreamForCreate()来构造的
     this.blockReplication = stat.getReplication();
     this.fileEncryptionInfo = stat.getFileEncryptionInfo();
     this.cachingStrategy = new AtomicReference<>(
@@ -262,7 +262,8 @@ public class DFSOutputStream extends FSOutputSummer
 
   static DFSOutputStream newStreamForCreate(DFSClient dfsClient, String src,
       FsPermission masked, EnumSet<CreateFlag> flag, boolean createParent,
-      short replication, long blockSize, Progressable progress,
+      short replication, long blockSize,// 这里是配置文件中的128MB
+                                            Progressable progress,
       DataChecksum checksum, String[] favoredNodes, String ecPolicyName,
       String storagePolicy)
       throws IOException {
@@ -275,8 +276,8 @@ public class DFSOutputStream extends FSOutputSummer
       boolean shouldRetry = true;
       int retryCount = CREATE_RETRY_COUNT;
       while (shouldRetry) {
-        shouldRetry = false
-        try {
+        shouldRetry = false;
+        try { // 这个blockSize是配置文件中配置的blockSize,128MB(测试过的)
           stat = dfsClient.namenode.create(src, masked, dfsClient.clientName,
               new EnumSetWritable<>(flag), createParent, replication,
               blockSize, SUPPORTED_CRYPTO_VERSIONS, ecPolicyName,
@@ -462,7 +463,7 @@ public class DFSOutputStream extends FSOutputSummer
 
     // If packet is full, enqueue it for transmission
     if (currentPacket.getNumChunks() == currentPacket.getMaxChunks() ||
-            getStreamer().getBytesCurBlock() == blockSize) {
+            getStreamer().getBytesCurBlock() == blockSize) { // 当前internal block已经写满了
       enqueueCurrentPacketFull();
     }
   }
@@ -1101,6 +1102,8 @@ public class DFSOutputStream extends FSOutputSummer
       try {
         // 和NN通信，创建一个新的block，虽然是DFSOutputStream负责，但是有可能这个block不是continuous block，而是一个Stripped block
         // NN端会根据src的路径判断是创建什么样儿的block
+        // 至于block的大小，在NN端是知道的，这是在创建文件的时候决定的,查看INodeFile的构造方法
+        // 从代码来看，这里并没有blocksize的信息
         return dfsClient.namenode.addBlock(src, dfsClient.clientName, prevBlock,
             excludedNodes, fileId, favoredNodes, allocFlags);
       } catch (RemoteException e) {

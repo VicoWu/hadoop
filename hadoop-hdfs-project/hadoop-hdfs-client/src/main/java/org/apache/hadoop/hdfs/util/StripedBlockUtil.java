@@ -157,10 +157,10 @@ public class StripedBlockUtil {
         bg.getBlock(), cellSize, dataBlkNum, idxInBlockGroup);
     final LocatedBlock locatedBlock;
     if (idxInReturnedLocs < bg.getLocations().length) {
-      locatedBlock = new LocatedBlock(blk,
-          new DatanodeInfo[]{bg.getLocations()[idxInReturnedLocs]},
-          new String[]{bg.getStorageIDs()[idxInReturnedLocs]},
-          new StorageType[]{bg.getStorageTypes()[idxInReturnedLocs]},
+      locatedBlock = new LocatedBlock(blk, // 每一个internal都从block group中切分属于自己的location, storage id, storage type
+          new DatanodeInfo[]{bg.getLocations()[idxInReturnedLocs]},// 这个internal block对应的DataNode info
+          new String[]{bg.getStorageIDs()[idxInReturnedLocs]}, //这个internal block对应的storage id
+          new StorageType[]{bg.getStorageTypes()[idxInReturnedLocs]}, // 这个internal block对应的storage type
           bg.getStartOffset(), bg.isCorrupt(), null);
     } else {
       locatedBlock = new LocatedBlock(blk, null, null, null,
@@ -182,6 +182,8 @@ public class StripedBlockUtil {
   /**
    * This method creates an internal {@link ExtendedBlock} at the given index
    * of a block group.
+   * 从这个方法可以看到，这个blockGroup的size是所有的internal block的size之和，在getInternalBlockLength()中这个group的size会被拆分
+   * 给internal block
    */
   public static ExtendedBlock constructInternalBlock(ExtendedBlock blockGroup,
       int cellSize, int dataBlkNum, int idxInBlockGroup) {
@@ -208,7 +210,7 @@ public class StripedBlockUtil {
    * @param idxInBlockGroup The logical index in the striped block group
    * @return The size of the internal block at the specified index
    */
-  public static long getInternalBlockLength(long dataSize,
+  public static long getInternalBlockLength(long dataSize, // 只包含data block的block group的大小
       int cellSize, int numDataBlocks, int idxInBlockGroup) {
     Preconditions.checkArgument(dataSize >= 0);
     Preconditions.checkArgument(cellSize > 0);

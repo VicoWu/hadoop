@@ -39,7 +39,7 @@ import org.apache.hadoop.io.Writable;
  * HDFS metadata for an entity in the filesystem.
  */
 @InterfaceAudience.Private
-@InterfaceStability.Evolving
+@InterfaceStability.Eavolving
 public interface HdfsFileStatus
     extends Writable, Comparable<Object>, Serializable, ObjectInputValidation {
 

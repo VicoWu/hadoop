@@ -337,7 +337,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
     }
     currentPackets = new DFSPacket[streamers.size()];
     datanodeRestartTimeout = dfsClient.getConf().getDatanodeRestartTimeout();
-    setCurrentStreamer(0);
+    setCurrentStreamer(0); // 肯定从第一个streamer开始写
   }
 
   /** Construct a new output stream for appending to a file. */
@@ -522,8 +522,9 @@ public class DFSStripedOutputStream extends DFSOutputStream
         + prevBlockGroup);
     final LocatedBlock lb;
     try {
-      // 向NameNode申请Block.对于Stripped的场景，是申请一个BlockGroup(Login block)
+      // 向NameNode申请Block.对于Stripped的场景，是申请一个BlockGroup(Logic block)
       // 这个addBlock是调用的super class的addBlock(), 即DFSStrippedOutputStream和DFSOutputStream都是一样的addBlock()逻辑
+      // 从代码来看，这里并没有blocksize的信息
       lb = addBlock(excludedNodes, dfsClient, src,
           prevBlockGroup, fileId, favoredNodes, getAddBlockFlags());
     } catch (IOException ioe) {
@@ -535,7 +536,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
     currentBlockGroup = lb.getBlock();
     blockGroupIndex++;
     // 从申请到的LocatedBlock(对应了一个Block Group)切分出Internal block
-    // 这里的blocks的索引已经是跟internal block在group中的索引一致了
+    // 这里的blocks的索引已经是跟internal block在group中的索引一致了，每一个internal block的大小也从Block group中拆分了
     final LocatedBlock[] blocks = StripedBlockUtil.parseStripedBlockGroup(
         (LocatedStripedBlock) lb, cellSize, numDataBlocks,
         numAllBlocks - numDataBlocks);
@@ -565,8 +566,14 @@ public class DFSStripedOutputStream extends DFSOutputStream
     }
   }
 
+  /**
+   * 这个blockSize就是创建文件的时候配置文件中的block size， 128MB
+   * 这个block group写文件的过程中currentBlockGroup.getNumBytes()不断更新，如果发现urrentBlockGroup.getNumBytes() == blockSize * numDataBlocks， 说明这个group写完了，可以写
+   * 下一个group了
+   * @return
+   */
   private boolean shouldEndBlockGroup() {
-    return currentBlockGroup != null &&
+    return currentBlockGroup != null && // 这个blockSize肯定是一个internal block的size，到底是128MB还是 128MB/6?
         currentBlockGroup.getNumBytes() == blockSize * numDataBlocks;
   }
 
@@ -582,15 +589,15 @@ public class DFSStripedOutputStream extends DFSOutputStream
       byte[] checksum, int ckoff, int cklen) throws IOException {
     final int index = getCurrentIndex();
     final int pos = cellBuffers.addTo(index, bytes, offset, len); // 往data block中写入数据，返回更新以后的position
-    final boolean cellFull = pos == cellSize;
+    final boolean cellFull = pos == cellSize; // 根据不同的Stripe Policy确定的，默认是1MB
 
     //  如果是第一个block，或者当前的block group写完了，需要写到一个新的block group，那么就创建一个新的
     if (currentBlockGroup == null || shouldEndBlockGroup()) {
       // the incoming data should belong to a new block. Allocate a new block.
-      allocateNewBlock();
+      allocateNewBlock(); // 对于一个刚刚创建的currentBlockGroup, numBytes=0
     }
 
-    currentBlockGroup.setNumBytes(currentBlockGroup.getNumBytes() + len);
+    currentBlockGroup.setNumBytes(currentBlockGroup.getNumBytes() + len);// 在写入过程中，numbers逐渐增加
     // note: the current streamer can be refreshed after allocating a new block
     final StripedDataStreamer current = getCurrentStreamer();
     if (current.isHealthy()) {
@@ -613,7 +620,7 @@ public class DFSStripedOutputStream extends DFSOutputStream
       // 如果不是最后一个data block, 是不需要写parity chunk的
       if (next == numDataBlocks) { // 刚刚写的是这个logic group中的最后一个data block的chunk，意味着下一个chunk是写parity block的chunk
         cellBuffers.flipDataBuffers();
-        writeParityCells();
+        writeParityCells(); // 在写parity的过程中，stream也是在往后切换的
         next = 0;
 
         // if this is the end of the block group, end each internal block

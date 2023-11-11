@@ -857,7 +857,7 @@ class DataStreamer extends Daemon {
   private void sendPacket(DFSPacket packet) throws IOException {
     // write out data to remote datanode
     try {
-      packet.writeTo(blockStream);
+      packet.writeTo(blockStream); // packet把自己写入到blockStream中去
       blockStream.flush();
     } catch (IOException e) {
       // HDFS-3398 treat primary DN is down since client is unable to
@@ -875,7 +875,7 @@ class DataStreamer extends Daemon {
   private long sendHeartbeat() throws IOException {
     final long heartbeatInterval = dfsClient.getConf().getSocketTimeout()/2;
     long timeout = heartbeatInterval - (Time.monotonicNow() - lastPacket);
-    if (timeout <= 0) {
+    if (timeout <= 0) {// Time.monotonicNow() - lastPacket > heartbeatInterval
       sendPacket(createHeartbeatPacket());
       timeout = heartbeatInterval;
     }
@@ -1179,6 +1179,8 @@ class DataStreamer extends Daemon {
                   " for " + block + " from datanode " + targets[i]);
             }
           }
+          // 在这里退出循环，说明所有的DN都已经确认成功了。注意，这个DataStreamer只会和第一个DN沟通，replicaion中所有DN的确认也
+          // 是通过第一个DN返回的
 
           if (!congestedNodesFromAck.isEmpty()) {
             synchronized (congestedNodes) {
@@ -1203,7 +1205,7 @@ class DataStreamer extends Daemon {
           synchronized (dataQueue) {
             one = ackQueue.getFirst();
           }
-          if (one.getSeqno() != seqno) {
+          if (one.getSeqno() != seqno) { // 当前dataPacket中刚刚发送出去的packet的序号和收到ack的序号不一致
             throw new IOException("ResponseProcessor: Expecting seqno " +
                 one.getSeqno() + " for block " + block +
                 " but received " + seqno);
@@ -1230,7 +1232,7 @@ class DataStreamer extends Daemon {
             }
             lastAckedSeqno = seqno;
             pipelineRecoveryCount = 0;
-            ackQueue.removeFirst();
+            ackQueue.removeFirst();// 收到了ack，从ackQueue中删除
             packetSendTime.remove(seqno);
             dataQueue.notifyAll();
 
@@ -1532,6 +1534,13 @@ class DataStreamer extends Daemon {
     setupPipelineInternal(nodes, storageTypes, storageIDs);
   }
 
+  /**
+   * StripedDataStream对这个方法进行了重写
+   * @param datanodes
+   * @param nodeStorageTypes
+   * @param nodeStorageIDs
+   * @throws IOException
+   */
   protected void setupPipelineInternal(DatanodeInfo[] datanodes,
       StorageType[] nodeStorageTypes, String[] nodeStorageIDs)
       throws IOException {
@@ -1750,7 +1759,7 @@ class DataStreamer extends Daemon {
 
   // connects to the first datanode in the pipeline
   // Returns true if success, otherwise return failure.
-  // 只需要和第一个DN建立连接
+  // 只需要和第一个DN建立连接，这个方法对于stripe和continuous都是相同的，参考StripedDataStreamer.setupPipelineInternal()
   //
   boolean createBlockOutputStream(DatanodeInfo[] nodes,
       StorageType[] nodeStorageTypes, String[] nodeStorageIDs,

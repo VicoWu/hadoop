@@ -69,6 +69,7 @@ public class LocatedBlock {
   }
 
   private final ExtendedBlock b;
+
   private long offset;  // offset of the first byte of the block in the file
   private final DatanodeInfoWithStorage[] locs;
   /** Cached storage ID for each replica */
@@ -102,6 +103,7 @@ public class LocatedBlock {
       String[] storageIDs, StorageType[] storageTypes) {
     this(b, convert(locs, storageIDs, storageTypes),
          storageIDs, storageTypes, -1, false, EMPTY_LOCS);
+    b.getNumBytes();
   }
 
   public LocatedBlock(ExtendedBlock b, DatanodeInfo[] locs,

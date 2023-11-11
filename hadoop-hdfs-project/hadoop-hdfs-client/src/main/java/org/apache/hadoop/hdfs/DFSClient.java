@@ -1103,7 +1103,7 @@ public class DFSClient implements java.io.Closeable, RemotePeerFactory,
   public OutputStream create(String src, boolean overwrite)
       throws IOException {
     return create(src, overwrite, dfsClientConf.getDefaultReplication(),
-        dfsClientConf.getDefaultBlockSize(), null);
+        dfsClientConf.(), null);
   }
 
   /**

@@ -246,7 +246,7 @@ class LowRedundancyBlocks implements Iterable<BlockInfo> {
       // highest priority
       return QUEUE_HIGHEST_PRIORITY;
     } else if ((curReplicas * 3) < expectedReplicas) {
-      //can only afford one replica loss
+      //can only afford one replica loss 还能再承受一个replica loss，即如果还有两个replica loss，数据就丢失了，block就corrupt了
       //this is considered very insufficiently redundant blocks.
       return QUEUE_VERY_LOW_REDUNDANCY;
     } else {
@@ -534,9 +534,9 @@ class LowRedundancyBlocks implements Iterable<BlockInfo> {
       // We do not want to skip QUEUE_WITH_CORRUPT_BLOCKS because we still need
       // to look for deleted blocks if any.
       final boolean inCorruptLevel = (QUEUE_WITH_CORRUPT_BLOCKS == priority);
-      final Iterator<BlockInfo> i = priorityQueues.get(priority).getBookmark();
+      final Iterator<BlockInfo> i = priorityQueues.get(priority).getBookmark();//这个PriorityQueue的bookmark
       final List<BlockInfo> blocks = new LinkedList<>();
-      if (!inCorruptLevel) { // 是不是因为corrupt block已经没有恢复的必要了？
+      if (!inCorruptLevel) { // 因为corrupt block已经没有恢复的必要了？
         blocksToReconstruct.add(blocks);
       }
       for(; count < blocksToProcess && i.hasNext(); count++) {

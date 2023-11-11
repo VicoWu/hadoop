@@ -89,6 +89,7 @@ public class StripedDataStreamer extends DataStreamer {
       // Throw the exception which has been set by the StripedOutputStream.
       this.getLastException().check(false);
     }
+    // 为这个index的stream获取下一个block
     return coordinator.getFollowingBlocks().poll(index);
   }
 
@@ -112,6 +113,7 @@ public class StripedDataStreamer extends DataStreamer {
     String[] storageIDs = lb.getStorageIDs();
 
     // Connect to the DataNode. If fail the internal error state will be set.
+    // 和DN建立连接
     success = createBlockOutputStream(nodes, storageTypes, storageIDs, 0L,
         false);
 

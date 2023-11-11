@@ -1977,7 +1977,7 @@ public class BlockManager implements BlockStatsMXBean {
         }
       }
         // Choose the blocks to be reconstructed
-      blocksToReconstruct = neededReconstruction
+      blocksToReconstruct = neededReconstruction // blocksToProcess存储了每次最多可以处理的blocks的数量
           .chooseLowRedundancyBlocks(blocksToProcess, reset);
     } finally {
       namesystem.writeUnlock();
@@ -1986,6 +1986,7 @@ public class BlockManager implements BlockStatsMXBean {
   }
 
   /**
+   * 根据挑选的 需要进行reconstruct的block，对他们进行重新构建
    * Reconstruct a set of blocks to full strength through replication or
    * erasure coding
    *
@@ -2024,7 +2025,7 @@ public class BlockManager implements BlockStatsMXBean {
       final Set<Node> excludedNodes = new HashSet<>(rw.getContainingNodes());
 
       // Exclude all nodes which already exists as targets for the block
-      List<DatanodeStorageInfo> targets =
+      List<DatanodeStorageInfo> targets = // 排除掉这个Block当前所在的targets
           pendingReconstruction.getTargets(rw.getBlock());
       if (targets != null) {
         for (DatanodeStorageInfo dn : targets) {
@@ -2038,7 +2039,7 @@ public class BlockManager implements BlockStatsMXBean {
       rw.chooseTargets(placementPolicy, storagePolicySuite, excludedNodes);
     }
 
-    // Step 3: add tasks to the DN
+    // Step 3: add tasks to the DN 将task发送给对应的DN
     namesystem.writeLock();
     try {
       for (BlockReconstructionWork rw : reconWork) {
@@ -2049,7 +2050,7 @@ public class BlockManager implements BlockStatsMXBean {
         }
 
         synchronized (neededReconstruction) {
-          if (validateReconstructionWork(rw)) {
+          if (validateReconstructionWork(rw)) { // 成功地将这个reconstruction work调度给对应的target
             scheduledWork++;
           }
         }
@@ -2100,7 +2101,7 @@ public class BlockManager implements BlockStatsMXBean {
   BlockReconstructionWork scheduleReconstruction(BlockInfo block,
       int priority) {
     // skip abandoned block or block reopened for append
-    if (block.isDeleted() || !block.isCompleteOrCommitted()) {
+    if (block.isDeleted() || !block.isCompleteOrCommitted()) { // 不处理正处于append状态的block，即，block不是处于COMMITTED或者COMPLETE状态
       // remove from neededReconstruction
       neededReconstruction.remove(block, priority);
       return null;
@@ -2230,7 +2231,7 @@ public class BlockManager implements BlockStatsMXBean {
     final short requiredRedundancy =
         getExpectedLiveRedundancyNum(block, numReplicas);
     final int pendingNum = pendingReconstruction.getNumReplicas(block);
-    if (hasEnoughEffectiveReplicas(block, numReplicas, pendingNum)) {
+    if (hasEnoughEffectiveReplicas(block, numReplicas, pendingNum)) { // 有足够的replica，不需要进行re-construction了
       neededReconstruction.remove(block, priority);
       rw.resetTargets();
       blockLog.debug("BLOCK* Removing {} from neededReconstruction as" +
@@ -2241,19 +2242,21 @@ public class BlockManager implements BlockStatsMXBean {
     DatanodeStorageInfo[] targets = rw.getTargets();
     BlockPlacementStatus placementStatus = getBlockPlacementStatus(block);
     if ((numReplicas.liveReplicas() >= requiredRedundancy) &&
-        (!placementStatus.isPlacementPolicySatisfied())) {
+        (!placementStatus.isPlacementPolicySatisfied())) { // 如果replica数量足够，仅仅是分布方式不满足放置策略
       BlockPlacementStatus newPlacementStatus =
-          getBlockPlacementStatus(block, targets);
+          getBlockPlacementStatus(block, targets); // 当添加了targets以后，获取对应的status
+      // 节点添加进来以后，依然没有满足当前的放置策略，并且，即使把target加进来，还需要额外的节点数量大于不加入target的时候还需要的节点数量，那么，加入这些target没有任何价值
+      // 也就是说，如果这些targets加进来以后，放置策略被满足，或者，虽然依然不满足，但是至少让所需要的节点数量减少了，那么，把这些target加进来就有意义
       if (!newPlacementStatus.isPlacementPolicySatisfied() &&
           (newPlacementStatus.getAdditionalReplicasRequired() >=
-              placementStatus.getAdditionalReplicasRequired())) {
+              placementStatus.getAdditionalReplicasRequired())) { // 分布不满足分布策略，
         // If the new targets do not meet the placement policy, or at least
         // reduce the number of replicas needed, then no use continuing.
         return false;
       }
       // mark that the reconstruction work is to replicate internal block to a
       // new rack.
-      rw.setNotEnoughRack();
+      rw.setNotEnoughRack(); // 仅仅需要把replica放到一个新的rack上
     }
 
     // Add block to the datanode's task list
@@ -2325,7 +2328,7 @@ public class BlockManager implements BlockStatsMXBean {
         placementPolicies.getPolicy(blockType);
     // 根据block放置策略和要求的节点数量，选择节点
     final DatanodeStorageInfo[] targets = blockplacement.chooseTarget(src,
-        numOfReplicas, client, excludedNodes, blocksize, 
+        numOfReplicas, client, excludedNodes, blocksize,  // 在客户端调用addBlock()的时候调用这个方法，这个blockSize应该指的是128M(通过客户端配置)，这个128MB只包含一个block group的data block的大小
         favoredDatanodeDescriptors, storagePolicy, flags);
 
     final String errorMessage = "File %s could only be written to %d of " +
@@ -2431,27 +2434,27 @@ public class BlockManager implements BlockStatsMXBean {
     BitSet liveBitSet = null;
     BitSet decommissioningBitSet = null;
     if (isStriped) {
-      int blockNum = ((BlockInfoStriped) block).getTotalBlockNum();
+      int blockNum = ((BlockInfoStriped) block).getTotalBlockNum(); // data unit + parity unit
       liveBitSet = new BitSet(blockNum);
       decommissioningBitSet = new BitSet(blockNum);
     }
 
-    for (DatanodeStorageInfo storage : blocksMap.getStorages(block)) {
-      final DatanodeDescriptor node = getDatanodeDescriptorFromStorage(storage);
-      final StoredReplicaState state = checkReplicaOnStorage(numReplicas, block,
+    for (DatanodeStorageInfo storage : blocksMap.getStorages(block)) { // 对于存储这个Block的每一个 DatanodeStorageInfo
+      final DatanodeDescriptor node = getDatanodeDescriptorFromStorage(storage);//
+      final StoredReplicaState state = checkReplicaOnStorage(numReplicas, block, // 获取这个节点上的 replica的状态
           storage, corruptReplicas.getNodes(block), false);
-      if (state == StoredReplicaState.LIVE) {
+      if (state == StoredReplicaState.LIVE) { //存活状态
         if (storage.getStorageType() == StorageType.PROVIDED) {
           storage = new DatanodeStorageInfo(node, storage.getStorageID(),
               storage.getStorageType(), storage.getState());
         }
-        nodesContainingLiveReplicas.add(storage);
+        nodesContainingLiveReplicas.add(storage); // 加入存活列表
       }
       containingNodes.add(node);
 
       // do not select the replica if it is corrupt or excess
       if (state == StoredReplicaState.CORRUPT ||
-          state == StoredReplicaState.EXCESS) {
+          state == StoredReplicaState.EXCESS) { // CORRUPT和EXCESS状态不考虑
         continue;
       }
 
@@ -2459,13 +2462,13 @@ public class BlockManager implements BlockStatsMXBean {
       // or unknown state replicas.
       if (state == null
           || state == StoredReplicaState.MAINTENANCE_NOT_FOR_READ) {
-        continue;
+        continue;// 不可读状态不考虑
       }
 
       // Save the live decommissioned replica in case we need it. Such replicas
       // are normally not used for replication, but if nothing else is
       // available, one can be selected as a source.
-      if (state == StoredReplicaState.DECOMMISSIONED) {
+      if (state == StoredReplicaState.DECOMMISSIONED) { // 已经decommissioned，这个replica不考虑
         if (decommissionedSrc == null ||
             ThreadLocalRandom.current().nextBoolean()) {
           decommissionedSrc = node;
@@ -2479,12 +2482,13 @@ public class BlockManager implements BlockStatsMXBean {
       byte blockIndex = -1;
       if (isStriped) {
         blockIndex = ((BlockInfoStriped) block)
-            .getStorageBlockIndex(storage);
+            .getStorageBlockIndex(storage); // 这个节点所存储的internal block的block index
         countLiveAndDecommissioningReplicas(numReplicas, state,
             liveBitSet, decommissioningBitSet, blockIndex);
       }
       // 只要这个优先级不是最高，并且节点不是处在decommissioning和entering_maintenance的状态，
       // 并且当前这个节点上pending的replica数量超过了maxReplicationStreams，那么就不能把这个节点放到候选节点中
+      // 意味着如果优先级特别高，依然可以放到一个很busy的节点上去作为source node
       if (priority != LowRedundancyBlocks.QUEUE_HIGHEST_PRIORITY
           && (!node.isDecommissionInProgress() && !node.isEnteringMaintenance())
           && node.getNumberOfBlocksToBeReplicated() >= maxReplicationStreams) {
@@ -2492,10 +2496,10 @@ public class BlockManager implements BlockStatsMXBean {
             || state == StoredReplicaState.DECOMMISSIONING)) {
           liveBusyBlockIndices.add(blockIndex);
         }
-        continue; // already reached replication limit 已经超过限制，查看下一个节点
+        continue; // already reached replication limit 已经超过限制，查看下一个replica
       }
 
-      // 这个节点上pending的和正在进行replica的stream数量超过了限制，放弃
+      // 这个节点上pending的和正在进行replica的stream数量超过了hard limit限制，放弃
       // replicationStreamsHardLimit是任何时候（包括最高优先级的replication）都不能超过的限制
       if (node.getNumberOfBlocksToBeReplicated() >= replicationStreamsHardLimit) {
         if (isStriped && (state == StoredReplicaState.LIVE
@@ -2504,7 +2508,7 @@ public class BlockManager implements BlockStatsMXBean {
         }
         continue;
       }
-
+      // 终于找到了一个合法的source node
       if(isStriped || srcNodes.isEmpty()) {
         srcNodes.add(node);
         if (isStriped) {
@@ -2518,8 +2522,8 @@ public class BlockManager implements BlockStatsMXBean {
       if (ThreadLocalRandom.current().nextBoolean()) {
         srcNodes.set(0, node);
       }
-    }
-
+    } //循环结束
+    //  对于基于复制的布局方式，如果没有一个存活的节点包含replica，还没有找到一个srcNodes，但是发现了一个已经decommissioned节点包含，那么，依然准备使用这个 decommissioned节点
     // Pick a live decommissioned replica, if nothing else is available.
     if (!isStriped && nodesContainingLiveReplicas.isEmpty() &&
         srcNodes.isEmpty() && decommissionedSrc != null) {
@@ -4446,7 +4450,7 @@ public class BlockManager implements BlockStatsMXBean {
       if (!liveBitSet.get(blockIndex)) {
         liveBitSet.set(blockIndex); // 保存这个live的index的状态
         // Sub decommissioning because the index replica is live.
-        if (decommissioningBitSet.get(blockIndex)) { // 这个block同时也是decommissioning的状态，那么就从decommissioning中去掉
+        if (decommissioningBitSet.get(blockIndex)) { // 这个internal block同时也是decommissioning的状态，那么就从decommissioning中去掉
           counters.subtract(StoredReplicaState.DECOMMISSIONING, 1);
         }
       } else {
@@ -4705,6 +4709,7 @@ public class BlockManager implements BlockStatsMXBean {
           invalidateBlocks.remove(dn);
           return 0;
         }
+        // 将需要invalidate的block挂在到DN上，当DN的hearbeat发送过来，就会将invalidate命令返回给DN
         toInvalidate = invalidateBlocks.invalidateWork(dnDescriptor);
         
         if (toInvalidate == null) {
@@ -4776,7 +4781,7 @@ public class BlockManager implements BlockStatsMXBean {
       // rack policy point of view.
       if (!cur.isDecommissionInProgress() && !cur.isDecommissioned()
           && ((corruptNodes == null) || !corruptNodes.contains(cur))) {
-        liveNodes.add(cur);
+        liveNodes.add(cur); // 现在已经存放该block的节点，加上额外添加的节点
       }
     }
     DatanodeInfo[] locs = liveNodes.toArray(new DatanodeInfo[liveNodes.size()]);
@@ -4785,7 +4790,7 @@ public class BlockManager implements BlockStatsMXBean {
         .getPolicy(blockType);
     int numReplicas = blockType == STRIPED ? ((BlockInfoStriped) storedBlock)
         .getRealTotalBlockNum() : storedBlock.getReplication();
-    return placementPolicy.verifyBlockPlacement(locs, numReplicas);
+    return placementPolicy.verifyBlockPlacement(locs, numReplicas); // 返回一个BlockPlacementStatus， 代表当前block的位置分布状态
   }
 
   boolean isNeededReconstructionForMaintenance(BlockInfo storedBlock,

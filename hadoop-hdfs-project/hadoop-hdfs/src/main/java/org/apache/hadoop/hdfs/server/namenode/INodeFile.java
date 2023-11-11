@@ -121,13 +121,13 @@ public class INodeFile extends INodeWithAdditionalFields
    * 1 [11-bit ErasureCodingPolicy ID]
    */
   enum HeaderFormat {
-    PREFERRED_BLOCK_SIZE(null, 48, 1),
+    PREFERRED_BLOCK_SIZE(null, 48, 1),// 前面48位存储了block size
     BLOCK_LAYOUT_AND_REDUNDANCY(PREFERRED_BLOCK_SIZE.BITS,
-        HeaderFormat.LAYOUT_BIT_WIDTH + 11, 0),
+        HeaderFormat.LAYOUT_BIT_WIDTH + 11, 0),// 长度12，存放是replica还是ec，如果是replica，后面11位存放副本数
     STORAGE_POLICY_ID(BLOCK_LAYOUT_AND_REDUNDANCY.BITS,
-        BlockStoragePolicySuite.ID_BIT_LENGTH, 0);
+        BlockStoragePolicySuite.ID_BIT_LENGTH, 0); // 长度4，存放ec policy id
 
-    private final LongBitFormat BITS;
+    private final LongBitFormat BITS; // 这个enum只有这唯一一个成员变量
 
     /**
      * Number of bits used to encode block layout type.
@@ -704,6 +704,7 @@ public class INodeFile extends INodeWithAdditionalFields
   
   /**
    * add a block to the block list
+   * 查看FSDirWriteFile.addBlock()
    */
   void addBlock(BlockInfo newblock) {
     Preconditions.checkArgument(newblock.isStriped() == this.isStriped());

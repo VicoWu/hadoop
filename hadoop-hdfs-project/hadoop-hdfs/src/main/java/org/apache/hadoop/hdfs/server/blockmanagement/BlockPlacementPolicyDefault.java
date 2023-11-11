@@ -530,6 +530,9 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
     return writer;
   }
 
+  /**
+   * 参考 BlockPlacementPolicyRackFaultTolerant.chooseLocalStorage
+   */
   protected Node chooseTargetInOrder(int numOfReplicas, 
                                  Node writer,
                                  final Set<Node> excludedNodes,

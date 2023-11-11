@@ -78,7 +78,7 @@ public abstract class BlockPlacementPolicy {
                                              List<DatanodeStorageInfo> chosen,
                                              boolean returnChosenNodes,
                                              Set<Node> excludedNodes,
-                                             long blocksize,
+                                             long blocksize, // 一个group中的data block的大小的总和
                                              BlockStoragePolicy storagePolicy,
                                              EnumSet<AddBlockFlag> flags);
   

@@ -46,7 +46,6 @@ public class LocatedStripedBlock extends LocatedBlock {
       String[] storageIDs, StorageType[] storageTypes, byte[] indices,
       long startOffset, boolean corrupt, DatanodeInfo[] cachedLocs) {
     super(b, locs, storageIDs, storageTypes, startOffset, corrupt, cachedLocs);
-
     if (indices == null) {
       this.blockIndices = EMPTY_INDICES;
     } else {

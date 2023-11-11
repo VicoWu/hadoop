@@ -187,7 +187,8 @@ class FSDirWriteFileOp {
           + "): " + pendingFile.getBlocks().length + " >= "
           + fsn.maxBlocksPerFile);
     }
-    blockSize = pendingFile.getPreferredBlockSize();
+    // 在这个文件create的时候，会指定对应的blockSize,如果用户没有特殊指定，就是128MB
+    blockSize = pendingFile.getPreferredBlockSize(); // 通过后续跟踪BlockPlacementPolicy的代码，这个size是会写入到某个machine上的block的size
     clientMachine = pendingFile.getFileUnderConstructionFeature()
         .getClientMachine();
     blockType = pendingFile.getBlockType();
@@ -254,10 +255,10 @@ class FSDirWriteFileOp {
 
     // allocate new block, record block locations in INode.
     final BlockType blockType = pendingFile.getBlockType();
-    // allocate new block, record block locations in INode.
+    // allocate new block, record block locations in INode. 这时候这个block还没有size信息
     Block newBlock = fsn.createNewBlock(blockType); // 这个block分配的时候，只有一个logical block id，即只有group ID，而group id的低4位是0，即没有group index
     INodesInPath inodesInPath = INodesInPath.fromINode(pendingFile);
-    saveAllocatedBlock(fsn, src, inodesInPath, newBlock, targets, blockType);
+    saveAllocatedBlock(fsn, src, inodesInPath, newBlock, targets, blockType);// 把这个刚刚创建的block放到BlockMap中去，同时和对应的INodeFile建立管理
 
     persistNewBlock(fsn, src, pendingFile); // 记录到edit log中
     offset = pendingFile.computeFileSize();
@@ -520,7 +521,7 @@ class FSDirWriteFileOp {
         blockInfo.convertToBlockUnderConstruction(
             HdfsServerConstants.BlockUCState.UNDER_CONSTRUCTION, targets);
       }
-      fsd.getBlockManager().addBlockCollection(blockInfo, fileINode);
+      fsd.getBlockManager().addBlockCollection(blockInfo, fileINode); // 把这个block添加到blocksMap中
       fileINode.addBlock(blockInfo);// 把这个block append到这个INodeFile的block信息里面去
 
       if(NameNode.stateChangeLog.isDebugEnabled()) {

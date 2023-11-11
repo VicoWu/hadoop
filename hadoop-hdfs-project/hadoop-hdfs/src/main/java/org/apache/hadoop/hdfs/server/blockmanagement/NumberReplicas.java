@@ -51,13 +51,14 @@ public class NumberReplicas extends EnumCounters<NumberReplicas.StoredReplicaSta
     // MAINTENANCE_NOT_FOR_READ == maintenanceReplicas -
     // Live ENTERING_MAINTENANCE.
     // 当 一个节点处于ENTERING_MAINTENANCE中（还没到达最终的IN_MAINTENANCE), 这个节点上的internal block如果没有其它副本，
-    // 那么这个node还是会接着server 这个replica 的读请求。显然，当节点进入到IN_MAINTENANCE中的时候，读请求就不会过来
+    // 那么这个node还是会接着serve 这个replica 的读请求。显然，当节点进入到IN_MAINTENANCE中的时候，读请求就不会过来了，
+    // 因此进入MAINTENANCE_NOT_FOR_READ
     MAINTENANCE_NOT_FOR_READ,
     // Live ENTERING_MAINTENANCE nodes to serve read requests.
     MAINTENANCE_FOR_READ,
     CORRUPT,
     // excess replicas already tracked by blockmanager's excess map
-    EXCESS,
+    EXCESS, // 副本数量超过了要求，这些超过要求的replica 最终会被删除
     STALESTORAGE,
     // for striped blocks only. number of redundant internal block replicas
     // that have not been tracked by blockmanager yet (i.e., not in excess)

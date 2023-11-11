@@ -49,8 +49,8 @@ public class BlockPlacementPolicies{
 
   public BlockPlacementPolicy getPolicy(BlockType blockType){
     switch (blockType) {
-    case CONTIGUOUS: return replicationPolicy;
-    case STRIPED: return ecPolicy;
+    case CONTIGUOUS: return replicationPolicy; // 基于复制的布局方式的PlacementPolicy
+    case STRIPED: return ecPolicy; // 基于条带的布局方式的PlacementPolicy
     default:
       throw new IllegalArgumentException(
           "getPolicy received a BlockType that isn't supported.");

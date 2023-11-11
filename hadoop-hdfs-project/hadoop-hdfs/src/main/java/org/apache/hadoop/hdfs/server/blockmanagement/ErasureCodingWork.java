@@ -29,6 +29,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * 一个ErasureCodingWork负责一个block group的调度。
+ */
 class ErasureCodingWork extends BlockReconstructionWork {
   private final byte[] liveBlockIndicies;
   private final byte[] liveBusyBlockIndicies;
@@ -56,9 +59,12 @@ class ErasureCodingWork extends BlockReconstructionWork {
   }
 
   @Override
+  /**
+   * 由于是block的重构，因此，在发出申请的时候，将当前block group已经存在的block的target放在excludedNodes
+   */
   void chooseTargets(BlockPlacementPolicy blockplacement,
       BlockStoragePolicySuite storagePolicySuite,
-      Set<Node> excludedNodes) {
+      Set<Node> excludedNodes) { //将当前block group已经存在的block的target放在excludedNodes
     // TODO: new placement policy for EC considering multiple writers
     // BlockPlacementPolicyRackFaultTolerant.chooseTarget
     DatanodeStorageInfo[] chosenTargets = blockplacement.chooseTarget(

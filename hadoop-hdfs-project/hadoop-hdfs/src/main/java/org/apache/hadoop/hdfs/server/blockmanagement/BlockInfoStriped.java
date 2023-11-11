@@ -214,6 +214,10 @@ public class BlockInfoStriped extends BlockInfo {
     }
   }
 
+  /**
+   * 可以看到，getNumBytes()返回的是这个block group中的data block的总大小，因此，要计算这个block group消耗的空间，还需要加上Parity block的空间消耗
+   * @return
+   */
   public long spaceConsumed() {
     // In case striped blocks, total usage by this striped blocks should
     // be the total of data blocks and parity blocks because

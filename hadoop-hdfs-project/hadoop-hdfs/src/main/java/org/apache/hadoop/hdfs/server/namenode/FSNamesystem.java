@@ -2945,6 +2945,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     readLock();
     try {
       checkOperation(OperationCategory.READ);
+      // 这里会设置blocksize，即写入到每一个DN磁盘的block的大小
       r = FSDirWriteFileOp.validateAddBlock(this, pc, src, fileId, clientName,
                                             previous, onRetryBlock);
     } finally {
@@ -3131,7 +3132,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    */
   Block createNewBlock(BlockType blockType) throws IOException {
     assert hasWriteLock();
-    Block b = new Block(nextBlockId(blockType), 0, 0);
+    Block b = new Block(nextBlockId(blockType), 0, 0);// 长度设置为0
     // Increment the generation stamp for every new block.
     b.setGenerationStamp(nextGenerationStamp(false));
     return b;
