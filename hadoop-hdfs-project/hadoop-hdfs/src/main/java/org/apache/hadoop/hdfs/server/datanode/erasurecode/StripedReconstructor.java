@@ -137,6 +137,7 @@ abstract class StripedReconstructor {
     liveBitSet = new BitSet(
         ecPolicy.getNumDataUnits() + ecPolicy.getNumParityUnits());
     for (int i = 0; i < stripedReconInfo.getLiveIndices().length; i++) {
+      // 这个live index包含了decommissioning和maintenance_for_read吗？是的。参考chooseSourceDataNodes()方法
       liveBitSet.set(stripedReconInfo.getLiveIndices()[i]);
     }
     blockGroup = stripedReconInfo.getBlockGroup();

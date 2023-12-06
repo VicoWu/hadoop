@@ -826,7 +826,7 @@ public class NamenodeFsck implements DataEncryptionKeyFactory {
       BlockPlacementStatus blockPlacementStatus = bpPolicies.getPolicy(
           lBlk.getBlockType()).verifyBlockPlacement(lBlk.getLocations(),
           targetFileReplication);
-      if (!blockPlacementStatus.isPlacementPolicySatisfied()) {
+      if (!blockPlacementStatus.isPlacementPolicySatisfied()) { // 用户运行了fsck命令并且添加了-replicate参数，并且我们发现这个block并没有满足placement policy
         res.numMisReplicatedBlocks++;
         misReplicatedPerFile++;
         if (!showFiles) {
@@ -837,6 +837,8 @@ public class NamenodeFsck implements DataEncryptionKeyFactory {
         out.println(" Replica placement policy is violated for " +
                     block + ". " + blockPlacementStatus.getErrorDescription());
         if (doReplicate) {
+          // 用户运行了fsck命令并且添加了-replicate参数，
+          // 并且我们发现这个block并没有满足placement policy，加入到misReplicatedBlocks
           misReplicatedBlocks.add(storedBlock);
         }
       }

@@ -200,7 +200,7 @@ class PendingReconstructionBlocks {
    */
   static class PendingBlockInfo {
     private long timeStamp;
-    private final List<DatanodeStorageInfo> targets;
+    private final List<DatanodeStorageInfo> targets; // 这个block需要复制到的位置
 
     PendingBlockInfo(DatanodeStorageInfo[] targets) {
       this.timeStamp = monotonicNow();

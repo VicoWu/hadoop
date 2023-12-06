@@ -414,6 +414,11 @@ public class DFSOutputStream extends FSOutputSummer
     }
   }
 
+  /**
+   * 一个packet 是 64KB, 加上一些头部信息，大概520B，
+   * @param psize
+   * @param csize
+   */
   protected void computePacketChunkSize(int psize, int csize) {
     final int bodySize = psize - PacketHeader.PKT_MAX_HEADER_LEN;
     final int chunkSize = csize + getChecksumSize();

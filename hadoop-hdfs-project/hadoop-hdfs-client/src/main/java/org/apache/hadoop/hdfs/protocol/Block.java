@@ -151,7 +151,7 @@ public class Block implements Writable, Comparable<Block> {
     return BLOCK_FILE_PREFIX + blockId;
   }
 
-  public long getNumBytes() { // 对于striped block,这个方法记录的是group中的data block的总的空间的大小
+  public long getNumBytes() { // 对于striped block,这个方法记录的是group中的data block的总的空间的大小，即文件对应的实际的数据大小
     return numBytes;
   }
 

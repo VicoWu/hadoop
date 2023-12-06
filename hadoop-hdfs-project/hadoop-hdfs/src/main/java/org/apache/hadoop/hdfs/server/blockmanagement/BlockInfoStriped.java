@@ -82,6 +82,8 @@ public class BlockInfoStriped extends BlockInfo {
    * stripe, it returns the number of actual data blocks.
    * Otherwise it returns the number of data units specified by erasure coding policy.
    * 这个方法返回的是真正的数据部分所占用的Storage Block的数量。
+   * 现在，这里的block指的是一个logical block。对于一个stripe logical block，如果它的数据量（仅仅数据部分）不足以构成一个stripe，那么它需要的data block
+   * 数量就是(getNumBytes() - 1) / ecPolicy.getCellSize() + 1，如果大于一个Stripe，那么它实际需要的数据量就是完成的data block的数据量
    */
   public short getRealDataBlockNum() {
     if (isComplete() || getBlockUCState() == BlockUCState.COMMITTED) {

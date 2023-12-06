@@ -3145,24 +3145,27 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
    */
   boolean checkFileProgress(String src, INodeFile v, boolean checkall) {
     assert hasReadLock();
-    if (checkall) {
+    if (checkall) { // checkall发生在客户端写完文件准备close()的时候，这时候允许最多numCommittedAllowed个block是commit的状态（还没有收到report）
       return checkBlocksComplete(src, true, v.getBlocks());
-    } else {
+    } else { // checkall=false发生在客户端需要添加一个block，那么必须确保倒数第二个block必须是complete的状态
       final BlockInfo[] blocks = v.getBlocks();
-      final int i = blocks.length - numCommittedAllowed - 2;
+      // 如果文件有5个block，numCommittedAllowed=2， 允许2个commit，那么i = 5 -2 -2 = 1
+      final int i = blocks.length - numCommittedAllowed - 2; // 默认numCommittedAllowed=0，代表倒数第二个block，注意，新的block现在还没开始创建
       return i < 0 || blocks[i] == null
-          || checkBlocksComplete(src, false, blocks[i]);
+           // 这里的blocks[i]指的是文件的第i个logical block,当numCommittedAllowed，只校验倒数第二个块
+          || checkBlocksComplete(src, false, blocks[i]);// 倒数第二个block必须是COMPLETE的状态
     }
   }
 
   /**
    * Check if the blocks are COMPLETE;
    * it may allow the last block to be COMMITTED.
+   * blocks 在allowCommittedBlock之前的必须都是COMPLETE状态
    */
   private boolean checkBlocksComplete(String src, boolean allowCommittedBlock,
       BlockInfo... blocks) {
     final int n = allowCommittedBlock? numCommittedAllowed: 0;
-    for(int i = 0; i < blocks.length; i++) {
+    for(int i = 0; i < blocks.length; i++) { // 逐个检查需要check的每一个block
       final short min = blockManager.getMinStorageNum(blocks[i]);
       final String err = INodeFile.checkBlockComplete(blocks, i, n, min);
       if (err != null) {
@@ -3733,6 +3736,13 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     return leaseManager.reassignLease(lease, pendingFile, newHolder);
   }
 
+  /**
+   * commitBlock 是上一个block
+   * @param fileINode
+   * @param iip
+   * @param commitBlock
+   * @throws IOException
+   */
   void commitOrCompleteLastBlock(
       final INodeFile fileINode, final INodesInPath iip,
       final Block commitBlock) throws IOException {
@@ -3741,6 +3751,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     blockManager.commitOrCompleteLastBlock(fileINode, commitBlock, iip);
   }
 
+  // 哪些
   void addCommittedBlocksToPending(final INodeFile pendingFile) {
     final BlockInfo[] blocks = pendingFile.getBlocks();
     int i = blocks.length - numCommittedAllowed;
@@ -3751,7 +3762,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
       final BlockInfo b = blocks[i];
       if (b != null && b.getBlockUCState() == BlockUCState.COMMITTED) {
         // b is COMMITTED but not yet COMPLETE, add it to pending replication.
-        blockManager.addExpectedReplicasToPending(b);
+        blockManager.addExpectedReplicasToPending(b); // 对于已经commit但是还没有complete的block，加入到 pendingReconstruction中去
       }
     }
   }
@@ -3780,6 +3791,7 @@ public class FSNamesystem implements Namesystem, FSNamesystemMBean,
     // close file and persist block allocations for this file
     closeFile(src, pendingFile);
 
+    // 检查这个文件的每一个block,如果有low redundancy（副本数量不够，或者数量够，但是副本位置不满足要求），那么就加入到neededReconstruction中去
     blockManager.checkRedundancy(pendingFile);
   }
 

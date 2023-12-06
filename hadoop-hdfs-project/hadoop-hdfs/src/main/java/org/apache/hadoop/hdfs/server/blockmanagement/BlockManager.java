@@ -1060,6 +1060,11 @@ public class BlockManager implements BlockStatsMXBean {
     return minReplicationToBeInMaintenance;
   }
 
+  /**
+   * 对于maintenance状态，ec要求最少6个副本存在，否则数据恢复就成问题
+   * @param block
+   * @return
+   */
   private short getMinMaintenanceStorageNum(BlockInfo block) {
     if (block.isStriped()) {
       return ((BlockInfoStriped) block).getRealDataBlockNum(); // stripe block实际占用数据的块的数量
@@ -1080,8 +1085,8 @@ public class BlockManager implements BlockStatsMXBean {
   /**
    * Commit a block of a file
    * 
-   * @param block block to be committed
-   * @param commitBlock - contains client reported block length and generation
+   * @param block block to be committed  是客户端传过来的block
+   * @param commitBlock - contains client reported block length and generation 是当前保存在NN上的这个文件的最后一个block
    * @return true if the block is changed to committed state.
    * @throws IOException if the block does not have at least a minimal number
    * of replicas reported from data-nodes.
@@ -1107,7 +1112,7 @@ public class BlockManager implements BlockStatsMXBean {
    * Commit the last block of the file and mark it as complete if it has
    * meets the minimum redundancy requirement
    * 
-   * @param bc block collection
+   * @param bc block collection, INodeFile就是一个bc的实现类
    * @param commitBlock - contains client reported block length and generation
    * @param iip - INodes in path to bc
    * @return true if the last block is changed to committed state.
@@ -1127,7 +1132,8 @@ public class BlockManager implements BlockStatsMXBean {
       throw new IOException("Commit or complete block " + commitBlock +
           ", whereas it is under recovery.");
     }
-    
+    // lastBlock是是存放在NameNode端的bc（INodeFile）的最后一个Block
+    // commitBlock是客户端在调用addBlock()的时候传过来的previous
     final boolean committed = commitBlock(lastBlock, commitBlock);
     if (committed && lastBlock.isStriped()) {
       // update scheduled size for DatanodeStorages that do not store any
@@ -1163,6 +1169,7 @@ public class BlockManager implements BlockStatsMXBean {
    * If IBR is not sent from expected locations yet, add the datanodes to
    * pendingReconstruction in order to keep RedundancyMonitor from scheduling
    * the block.
+   *  对于已经commit但是还没有complete的block，加入到 pendingReconstruction中去
    */
   public void addExpectedReplicasToPending(BlockInfo blk) {
     if (!blk.isStriped()) {
@@ -1172,12 +1179,13 @@ public class BlockManager implements BlockStatsMXBean {
         ArrayList<DatanodeStorageInfo> pendingNodes = new ArrayList<>();
         for (DatanodeStorageInfo storage : expectedStorages) {
           DatanodeDescriptor dnd = storage.getDatanodeDescriptor();
-          if (blk.findStorageInfo(dnd) == null) {
+          if (blk.findStorageInfo(dnd) == null) { // 这个DataNode还没有把这个replica会报上来
             pendingNodes.add(storage);
           }
         }
+        // 注意和neededReconstruction区分开，pendingReconstruction指的是在写文件过程中正在reconstruction的blocks，因此这些blocks是有明确的location的
         pendingReconstruction.increment(blk,
-            pendingNodes.toArray(new DatanodeStorageInfo[pendingNodes.size()]));
+            pendingNodes.toArray(new DatanodeStorageInfo[pendingNodes.size()])); //
       }
     }
   }
@@ -1798,6 +1806,7 @@ public class BlockManager implements BlockStatsMXBean {
           blk, dn);
       return;
     }
+    // 对于一个continuous，只是mark一个replica，对于一个stripe，只是mark一个internal block
     markBlockAsCorrupt(new BlockToMarkCorrupt(reportedBlock, storedBlock,
             blk.getGenerationStamp(), reason, Reason.CORRUPTION_REPORTED),
         storage, node);
@@ -1962,6 +1971,7 @@ public class BlockManager implements BlockStatsMXBean {
    *
    * @return number of blocks scheduled for reconstruction during this
    *         iteration.
+   *         虽然方法教compute*，但是其实已经在进行对应的work的分发
    */
   int computeBlockReconstructionWork(int blocksToProcess) {
     List<List<BlockInfo>> blocksToReconstruct = null;
@@ -1978,15 +1988,17 @@ public class BlockManager implements BlockStatsMXBean {
       }
         // Choose the blocks to be reconstructed
       blocksToReconstruct = neededReconstruction // blocksToProcess存储了每次最多可以处理的blocks的数量
-          .chooseLowRedundancyBlocks(blocksToProcess, reset);
+          .chooseLowRedundancyBlocks(blocksToProcess, reset); // 每次最多处理blocksToProcess个，然后每次都是从上次的bookmark的位置接着进行
     } finally {
       namesystem.writeUnlock();
     }
+    // 根据挑选的 需要进行reconstruct的block，对他们进行重新构建
     return computeReconstructionWorkForBlocks(blocksToReconstruct);
   }
 
   /**
    * 根据挑选的 需要进行reconstruct的block，对他们进行重新构建
+   * 虽然叫compute但是其实是计算好了以后调度出去
    * Reconstruct a set of blocks to full strength through replication or
    * erasure coding
    *
@@ -2002,10 +2014,11 @@ public class BlockManager implements BlockStatsMXBean {
     // Step 1: categorize at-risk blocks into replication and EC tasks
     namesystem.writeLock();
     try {
-      synchronized (neededReconstruction) {
+      synchronized (neededReconstruction) { // 优先级从高到低(priority=0优先级最高)
         for (int priority = 0; priority < blocksToReconstruct
             .size(); priority++) {
           for (BlockInfo block : blocksToReconstruct.get(priority)) {
+            // 创建对应的ReconstructionWork,但是还咩有到挑选节点的阶段
             BlockReconstructionWork rw = scheduleReconstruction(block,
                 priority);
             if (rw != null) {
@@ -2018,6 +2031,7 @@ public class BlockManager implements BlockStatsMXBean {
       namesystem.writeUnlock();
     }
 
+    // 为每一个reconstruction work挑选target 节点
     // Step 2: choose target nodes for each reconstruction task
     for (BlockReconstructionWork rw : reconWork) {
       // Exclude all of the containing nodes from being targets.
@@ -2025,7 +2039,8 @@ public class BlockManager implements BlockStatsMXBean {
       final Set<Node> excludedNodes = new HashSet<>(rw.getContainingNodes());
 
       // Exclude all nodes which already exists as targets for the block
-      List<DatanodeStorageInfo> targets = // 排除掉这个Block当前所在的targets
+      // 这个block还有一些replica在等待汇报，我们assume这些汇报应该会到达，那么选择重构的target的时候，这些节点不应该成为target
+      List<DatanodeStorageInfo> targets =
           pendingReconstruction.getTargets(rw.getBlock());
       if (targets != null) {
         for (DatanodeStorageInfo dn : targets) {
@@ -2041,7 +2056,7 @@ public class BlockManager implements BlockStatsMXBean {
 
     // Step 3: add tasks to the DN 将task发送给对应的DN
     namesystem.writeLock();
-    try {
+    try { // 遍历每一个reconstruction work， 然后调度出去
       for (BlockReconstructionWork rw : reconWork) {
         final DatanodeStorageInfo[] targets = rw.getTargets();
         if (targets == null || targets.length == 0) {
@@ -2083,6 +2098,8 @@ public class BlockManager implements BlockStatsMXBean {
 
   // Check if the number of live + pending replicas satisfies
   // the expected redundancy.
+  // 如果 live + pending replicas 的数量不小于所需要的replica数量，并且（还有pending的replica，或者没有pending的并且已经满足放置策略）
+  // 这里的含义是，如果有pending的，那么我们先不用考虑是否满足placement policy
   boolean hasEnoughEffectiveReplicas(BlockInfo block,
       NumberReplicas numReplicas, int pendingReplicaNum) {
     int required = getExpectedLiveRedundancyNum(block, numReplicas);
@@ -2128,7 +2145,7 @@ public class BlockManager implements BlockStatsMXBean {
     // liveReplicaNodes can include READ_ONLY_SHARED replicas which are
     // not included in the numReplicas.liveReplicas() count
     assert liveReplicaNodes.size() >= numReplicas.liveReplicas();
-
+    // 这个块还有多少个repica处于待定状态（比如写完并且commit了，但是还没有收到块汇报）
     int pendingNum = pendingReconstruction.getNumReplicas(block);
     if (hasEnoughEffectiveReplicas(block, numReplicas, pendingNum)) {
       neededReconstruction.remove(block, priority);
@@ -2150,7 +2167,7 @@ public class BlockManager implements BlockStatsMXBean {
 
     final BlockCollection bc = getBlockCollection(block);
     if (block.isStriped()) {
-      if (pendingNum > 0) {
+      if (pendingNum > 0) { // 还有pending的，暂时等等，不处理
         // Wait the previous reconstruction to finish.
         NameNode.getNameNodeMetrics().incNumTimesReReplicationNotScheduled();
         return null;
@@ -2167,13 +2184,14 @@ public class BlockManager implements BlockStatsMXBean {
       final DatanodeDescriptor[] newSrcNodes =
           new DatanodeDescriptor[srcNodes.length];
       byte[] newIndices = new byte[liveBlockIndices.size()];
-      // 对srcNodes和liveBlockIndices进行重新调整，保证srcNodes前面的节点都是不重复的节点
+      // 对srcNodes和liveBlockIndices进行重新调整，写入到newSrcNodes和newIndices中，保证srcNodes前面的节点都是不重复的节点
       adjustSrcNodesAndIndices((BlockInfoStriped)block,
           srcNodes, liveBlockIndices, newSrcNodes, newIndices);
       byte[] busyIndices = new byte[liveBusyBlockIndices.size()];
       for (int i = 0; i < liveBusyBlockIndices.size(); i++) {
         busyIndices[i] = liveBusyBlockIndices.get(i);
       }
+      // 虽然创建了ErasureCodingWork但是有可能是进行replica work，具体调度出去的时候会进行具体分析
       return new ErasureCodingWork(getBlockPoolId(), block, bc, newSrcNodes,
           containingNodes, liveReplicaNodes, additionalReplRequired,
           priority, newIndices, busyIndices);
@@ -2260,7 +2278,8 @@ public class BlockManager implements BlockStatsMXBean {
     }
 
     // Add block to the datanode's task list
-    rw.addTaskToDatanode(numReplicas);
+    // 将任务添加给对一个的DN
+    rw.addTaskToDatanode(numReplicas); // 有可能是 ReplicationWork, 有可能是ErasureCodingWork ， 在ErasureCodingWork中依然有可能是一个复制的task
     DatanodeStorageInfo.incrementBlocksScheduled(targets);
 
     // Move the block-replication into a "pending" state.
@@ -2422,7 +2441,8 @@ public class BlockManager implements BlockStatsMXBean {
   DatanodeDescriptor[] chooseSourceDatanodes(BlockInfo block,
       List<DatanodeDescriptor> containingNodes,
       List<DatanodeStorageInfo> nodesContainingLiveReplicas,
-      NumberReplicas numReplicas, List<Byte> liveBlockIndices,
+      NumberReplicas numReplicas,  // 传到这里的numReplicas是一个刚刚初始化、空的统计信息
+      List<Byte> liveBlockIndices,
       List<Byte> liveBusyBlockIndices, int priority) {
     containingNodes.clear();
     nodesContainingLiveReplicas.clear();
@@ -2464,6 +2484,7 @@ public class BlockManager implements BlockStatsMXBean {
           || state == StoredReplicaState.MAINTENANCE_NOT_FOR_READ) {
         continue;// 不可读状态不考虑
       }
+      // 可读状态是可以考虑的
 
       // Save the live decommissioned replica in case we need it. Such replicas
       // are normally not used for replication, but if nothing else is
@@ -2486,12 +2507,10 @@ public class BlockManager implements BlockStatsMXBean {
         countLiveAndDecommissioningReplicas(numReplicas, state,
             liveBitSet, decommissioningBitSet, blockIndex);
       }
-      // 只要这个优先级不是最高，并且节点不是处在decommissioning和entering_maintenance的状态，
-      // 并且当前这个节点上pending的replica数量超过了maxReplicationStreams，那么就不能把这个节点放到候选节点中
-      // 意味着如果优先级特别高，依然可以放到一个很busy的节点上去作为source node
+
       if (priority != LowRedundancyBlocks.QUEUE_HIGHEST_PRIORITY
           && (!node.isDecommissionInProgress() && !node.isEnteringMaintenance())
-          && node.getNumberOfBlocksToBeReplicated() >= maxReplicationStreams) {
+          && node.getNumberOfBlocksToBeReplicated() >= maxReplicationStreams) { // maxReplicationStreams默认值是2
         if (isStriped && (state == StoredReplicaState.LIVE
             || state == StoredReplicaState.DECOMMISSIONING)) {
           liveBusyBlockIndices.add(blockIndex);
@@ -2499,16 +2518,20 @@ public class BlockManager implements BlockStatsMXBean {
         continue; // already reached replication limit 已经超过限制，查看下一个replica
       }
 
-      // 这个节点上pending的和正在进行replica的stream数量超过了hard limit限制，放弃
-      // replicationStreamsHardLimit是任何时候（包括最高优先级的replication）都不能超过的限制
-      if (node.getNumberOfBlocksToBeReplicated() >= replicationStreamsHardLimit) {
+
+      if (node.getNumberOfBlocksToBeReplicated() >= replicationStreamsHardLimit) { // replicationStreamsHardLimit默认值是4
         if (isStriped && (state == StoredReplicaState.LIVE
             || state == StoredReplicaState.DECOMMISSIONING)) {
           liveBusyBlockIndices.add(blockIndex);
         }
         continue;
       }
-      // 终于找到了一个合法的source node
+      // 任何时候，优先级超过4，都不会作为srcNode
+      // 如果优先级最高，虽然大于等于2，但是没超过4，那么依然会作为srcNodes，
+      // 如果虽然优先级不高，但是处于正在decommissioning或者正在maintainace_for_read，那么也会作为src
+      // 如果虽然优先级不高，虽然不是decommissioning或者正在maintainace_for_read，但是没有超过2, 那么会作为src
+      //
+      // 终于找到了一个合法的source node，对于striped， 每次都把这个节点加入到srcNodes中，对于非stripe，只有当srcNodes是空的才会这样做
       if(isStriped || srcNodes.isEmpty()) {
         srcNodes.add(node);
         if (isStriped) {
@@ -2516,6 +2539,7 @@ public class BlockManager implements BlockStatsMXBean {
         }
         continue;
       }
+      // 对于基于复制的布局，srcNode不为空，但是为了随机性，随机选择更新或者不更新当前的srcNodes
       // for replicated block, switch to a different node randomly
       // this to prevent from deterministically selecting the same node even
       // if the node failed to replicate the block on previous iterations
@@ -2529,7 +2553,7 @@ public class BlockManager implements BlockStatsMXBean {
         srcNodes.isEmpty() && decommissionedSrc != null) {
       srcNodes.add(decommissionedSrc);
     }
-
+    // 如果是基于复制，那么srcNodes肯定只有一个元素
     return srcNodes.toArray(new DatanodeDescriptor[srcNodes.size()]);
   }
 
@@ -2538,6 +2562,8 @@ public class BlockManager implements BlockStatsMXBean {
    * and put them back into the neededReconstruction queue
    */
   void processPendingReconstructions() {
+    // pendingReconstruction主要来自与文件最后close的时候的最后一个block，在这里，如果pendingReconstruction
+    // 中的block在指定时间内依然没有完成construction，那么就需要放到neededConstruction中去
     BlockInfo[] timedOutItems = pendingReconstruction.getTimedOutBlocks();
     if (timedOutItems != null) {
       namesystem.writeLock();
@@ -2547,12 +2573,12 @@ public class BlockManager implements BlockStatsMXBean {
            * Use the blockinfo from the blocksmap to be certain we're working
            * with the most up-to-date block information (e.g. genstamp).
            */
-          BlockInfo bi = blocksMap.getStoredBlock(timedOutItems[i]);
+          BlockInfo bi = blocksMap.getStoredBlock(timedOutItems[i]); // BlockInfo是一个block group
           if (bi == null || bi.isDeleted()) {
             continue;
           }
           NumberReplicas num = countNodes(timedOutItems[i]);
-          if (isNeededReconstruction(bi, num)) {
+          if (isNeededReconstruction(bi, num)) { //这个pendingReconstruction 中的block的确需要re-construction
             neededReconstruction.add(bi, num.liveReplicas(),
                 num.readOnlyReplicas(), num.outOfServiceReplicas(),
                 getExpectedRedundancyNum(bi));
@@ -2857,6 +2883,7 @@ public class BlockManager implements BlockStatsMXBean {
 
   /**
    * Rescan the list of blocks which were previously postponed.
+   * 扫描当前的postponedMisreplicatedBlocks,决定对这些block的处理，这个方法在RedundancyMonitor中被调用
    */
   void rescanPostponedMisreplicatedBlocks() {
     if (getPostponedMisreplicatedBlocksCount() == 0) {
@@ -2867,9 +2894,10 @@ public class BlockManager implements BlockStatsMXBean {
     long startSize = postponedMisreplicatedBlocks.size();
     try {
       Iterator<Block> it = postponedMisreplicatedBlocks.iterator();
+      // 对于postponedMisreplicatedBlocks中的每一个block
       for (int i=0; i < blocksPerPostpondedRescan && it.hasNext(); i++) {
         Block b = it.next();
-        it.remove();
+        it.remove(); // 每遍历一个就从postponedMisreplicatedBlocks中删掉。
 
         BlockInfo bi = getStoredBlock(b);
         if (bi == null) {
@@ -2881,8 +2909,8 @@ public class BlockManager implements BlockStatsMXBean {
         MisReplicationResult res = processMisReplicatedBlock(bi);
         LOG.debug("BLOCK* rescanPostponedMisreplicatedBlocks: " +
             "Re-scanned block {}, result is {}", b, res);
-        if (res == MisReplicationResult.POSTPONE) {
-          rescannedMisreplicatedBlocks.add(b);
+        if (res == MisReplicationResult.POSTPONE) { // 需要继续延迟，重新加回到rescannedMisreplicatedBlocks
+          rescannedMisreplicatedBlocks.add(b); // 下次需要继续再扫描的节点
         }
       }
     } finally {
@@ -2908,7 +2936,8 @@ public class BlockManager implements BlockStatsMXBean {
     Collection<Block> toInvalidate = new ArrayList<>();
     Collection<BlockToMarkCorrupt> toCorrupt = new ArrayList<>();
     Collection<StatefulBlockInfo> toUC = new ArrayList<>();
-    reportDiff(storageInfo, report,
+    reportDiff(storageInfo, report, // 在这里，将汇报上来的Block（实质上是一个replica） 关联到NameNode的BlockInfo上面来，
+            // 这个BlockInfo是在客户端创建文件和写文件申请block的时候就已经准备好了
                  toAdd, toRemove, toInvalidate, toCorrupt, toUC);
 
     DatanodeDescriptor node = storageInfo.getDatanodeDescriptor();
@@ -3473,6 +3502,9 @@ public class BlockManager implements BlockStatsMXBean {
    * Modify (block-->datanode) map. Remove block from set of
    * needed reconstruction if this takes care of the problem.
    * @return the block that is stored in blocksMap.
+   * 区分addStoredBlock()和addLocatedBlock(). stored block是指
+   * 已经被dn存储下来的block
+   * 注意，汇报上来的准确来讲是一个replica，这个replica属于BlocksMap中的某一个block，
    */
   private Block addStoredBlock(final BlockInfo block,
                                final Block reportedBlock,
@@ -3647,7 +3679,7 @@ public class BlockManager implements BlockStatsMXBean {
     reconstructionQueuesInitializer = new Daemon() {
 
       @Override
-      public void run() {
+      public void run() { // 这是一个异步线程
         try {
           processMisReplicatesAsync();
         } catch (InterruptedException ie) {
@@ -3691,13 +3723,13 @@ public class BlockManager implements BlockStatsMXBean {
     long nrInvalid = 0, nrOverReplicated = 0;
     long nrUnderReplicated = 0, nrPostponed = 0, nrUnderConstruction = 0;
     long startTimeMisReplicatedScan = Time.monotonicNow();
-    Iterator<BlockInfo> blocksItr = blocksMap.getBlocks().iterator();
+    Iterator<BlockInfo> blocksItr = blocksMap.getBlocks().iterator();// 处理对象是目前管理的所有的Block
     long totalBlocks = blocksMap.size();
     reconstructionQueuesInitProgress = 0;
     long totalProcessed = 0;
     long sleepDuration =
         Math.max(1, Math.min(numBlocksPerIteration/1000, 10000));
-
+    // 这也是一个不断执行的过程
     while (namesystem.isRunning() && !Thread.currentThread().isInterrupted()) {
       int processed = 0;
       namesystem.writeLockInterruptibly();
@@ -3706,24 +3738,25 @@ public class BlockManager implements BlockStatsMXBean {
           BlockInfo block = blocksItr.next();
           MisReplicationResult res = processMisReplicatedBlock(block);
           switch (res) {
-          case UNDER_REPLICATED:
+          case UNDER_REPLICATED: //这个block的副本数不足
             LOG.trace("under replicated block {}: {}", block, res);
             nrUnderReplicated++;
             break;
-          case OVER_REPLICATED:
+          case OVER_REPLICATED: //这个文件已经过度复制
             LOG.trace("over replicated block {}: {}", block, res);
             nrOverReplicated++;
             break;
-          case INVALID:
+          case INVALID: // 这个block对应的文件已经删除
             LOG.trace("invalid block {}: {}", block, res);
             nrInvalid++;
             break;
           case POSTPONE:
             LOG.trace("postpone block {}: {}", block, res);
             nrPostponed++;
+            // 加入到postponedMisreplicatedBlocks，这个list待会儿会有RedanduncyMonitor.run()去异步读取并处理
             postponeBlock(block);
             break;
-          case UNDER_CONSTRUCTION:
+          case UNDER_CONSTRUCTION: //这个block正在appending阶段，忽略
             LOG.trace("under construction block {}: {}", block, res);
             nrUnderConstruction++;
             break;
@@ -3788,7 +3821,7 @@ public class BlockManager implements BlockStatsMXBean {
   /**
    * Schedule replication work for a specified list of mis-replicated
    * blocks and return total number of blocks scheduled for replication.
-   *
+   * 这个方法运行在用户运行fsck命令的时候
    * @param blocks A list of blocks for which replication work needs to
    *              be scheduled.
    * @return Total number of blocks for which replication work is scheduled.
@@ -3840,8 +3873,9 @@ public class BlockManager implements BlockStatsMXBean {
       // they'll be reached when they are completed or recovered.
       return MisReplicationResult.UNDER_CONSTRUCTION;
     }
-    // calculate current redundancy
-    short expectedRedundancy = getExpectedRedundancyNum(block);// 如果是striped block，返回的是data block num
+    // block的状态是complete了，看看block的副本数量
+    // 如果是striped block，返回的是data block + parity block number
+    short expectedRedundancy = getExpectedRedundancyNum(block);
     NumberReplicas num = countNodes(block);
     final int numCurrentReplica = num.liveReplicas();
     // add to low redundancy queue if need to be
@@ -3854,13 +3888,14 @@ public class BlockManager implements BlockStatsMXBean {
     }
 
     if (shouldProcessExtraRedundancy(num, expectedRedundancy)) {
-      if (num.replicasOnStaleNodes() > 0) {
+      if (num.replicasOnStaleNodes() > 0) { // 如果这个节点over replica，但是有些replica在stale node上，我们
+        // 判定这个replica的状态MisReplicationResult.POSTPONE, 暂不处理
         // If any of the replicas of this block are on nodes that are
         // considered "stale", then these replicas may in fact have
         // already been deleted. So, we cannot safely act on the
         // over-replication until a later point in time, when
         // the "stale" nodes have block reported.
-        return MisReplicationResult.POSTPONE;
+        return MisReplicationResult.POSTPONE; // 推迟
       }
       
       // extra redundancy block
@@ -4375,6 +4410,15 @@ public class BlockManager implements BlockStatsMXBean {
     return numberReplicas;
   }
 
+  /**
+   * 根据storage的状态，设置counters中对应状态的统计信息
+   * @param counters
+   * @param b
+   * @param storage
+   * @param nodesCorrupt
+   * @param inStartupSafeMode
+   * @return
+   */
   private StoredReplicaState checkReplicaOnStorage(NumberReplicas counters,
       BlockInfo b, DatanodeStorageInfo storage,
       Collection<DatanodeDescriptor> nodesCorrupt, boolean inStartupSafeMode) {
@@ -4403,6 +4447,7 @@ public class BlockManager implements BlockStatsMXBean {
         s = StoredReplicaState.LIVE;
       }
       counters.add(s, 1);
+      // //如果这个Storage是stale storage，那么，认为这个replica是stale状态，直到收到对应DN的heartbeat
       if (storage.areBlockContentsStale()) {
         counters.add(StoredReplicaState.STALESTORAGE, 1);
       }
@@ -4675,7 +4720,7 @@ public class BlockManager implements BlockStatsMXBean {
     for (BlockInfo block : bc.getBlocks()) {
       short expected = getExpectedRedundancyNum(block);
       final NumberReplicas n = countNodes(block);
-      final int pending = pendingReconstruction.getNumReplicas(block);
+      final int pending = pendingReconstruction.getNumReplicas(block); // 这个block还有几个replica没有收到DN的汇报
       if (!hasEnoughEffectiveReplicas(block, n, pending)) {
         neededReconstruction.add(block, n.liveReplicas() + pending,
             n.readOnlyReplicas(), n.outOfServiceReplicas(), expected);
@@ -4820,11 +4865,12 @@ public class BlockManager implements BlockStatsMXBean {
   // 可容忍的最少的live replica的数量
   public short getExpectedLiveRedundancyNum(BlockInfo block,
       NumberReplicas numberReplicas) {
-    // 对于striped block，reduncy 数量指的是data block的数量
+    // 对于striped block，expectedRedundancy 数量指的是data block + parity block的数量,
+    // 对于replication，expectedRedundancy指的是replication factor
     final short expectedRedundancy = getExpectedRedundancyNum(block);
     // 假如当前我的block配置的副本是5， 有2个副本是处于maintenance，那么我期待的live 副本数量是5-2=3
     return (short)Math.max(expectedRedundancy -
-        numberReplicas.maintenanceReplicas(),
+        numberReplicas.maintenanceReplicas(), // 处于maintenance中的replica也算是live，这本身就是maintenance的目的，让replica短时间可以容忍丢失，但是处于decommission的不能算live
         // 最小的maintenance 副本数量。对于striped block，最小的maintenance副本数量就是data block 的数量，说明对于
             // stripe block, 不需与data block丢失
         getMinMaintenanceStorageNum(block));
@@ -4832,8 +4878,8 @@ public class BlockManager implements BlockStatsMXBean {
 
   public short getExpectedRedundancyNum(BlockInfo block) {
     return block.isStriped() ?
-        ((BlockInfoStriped) block).getRealTotalBlockNum() :
-        block.getReplication();
+        ((BlockInfoStriped) block).getRealTotalBlockNum() : // 比如RS(6,2)， realTotalBlockNum 就是 6 + 2 = 8
+        block.getReplication(); // 连续布局情况下，就是配置的块副本数
   }
 
   public long getMissingBlocksCount() {
@@ -5013,13 +5059,13 @@ public class BlockManager implements BlockStatsMXBean {
 
     @Override
     public void run() {
-      while (namesystem.isRunning()) {
+      while (namesystem.isRunning()) { // 这是一个无限循环，只要是active namenode，就不断运行
         try {
           // Process recovery work only when active NN is out of safe mode.
           if (isPopulatingReplQueues()) {
-            computeDatanodeWork();
-            processPendingReconstructions();
-            rescanPostponedMisreplicatedBlocks();
+            computeDatanodeWork(); // 从重构队列中取出Block, 选择并且将需要re-construct的节点发送给对应的Node 去执行
+            processPendingReconstructions(); // 从待定队列中取出Block，，如果需要reconstruct，加入到neededReconstruction中
+            rescanPostponedMisreplicatedBlocks(); // 从延迟队列中取出Block，如果需要reconstruct，加入到neededReconstruction中
             lastRedundancyCycleTS.set(Time.monotonicNow());
           }
           TimeUnit.MILLISECONDS.sleep(redundancyRecheckIntervalMs);

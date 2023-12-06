@@ -24,9 +24,12 @@ import java.util.List;
 import java.util.Set;
 
 class ReplicationWork extends BlockReconstructionWork {
-  public ReplicationWork(BlockInfo block, BlockCollection bc,
-      DatanodeDescriptor[] srcNodes, List<DatanodeDescriptor> containingNodes,
-      List<DatanodeStorageInfo> liveReplicaStorages, int additionalReplRequired,
+  public ReplicationWork(BlockInfo block,
+                         BlockCollection bc,
+                         DatanodeDescriptor[] srcNodes,
+                         List<DatanodeDescriptor> containingNodes,
+                         List<DatanodeStorageInfo> liveReplicaStorages,
+                         int additionalReplRequired,
       int priority) {
     super(block, bc, srcNodes, containingNodes,
         liveReplicaStorages, additionalReplRequired, priority);

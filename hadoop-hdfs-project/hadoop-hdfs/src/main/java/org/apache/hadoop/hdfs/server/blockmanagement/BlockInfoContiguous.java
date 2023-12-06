@@ -40,10 +40,11 @@ public class BlockInfoContiguous extends BlockInfo {
   /**
    * Ensure that there is enough  space to include num more triplets.
    * @return first free triplet index.
+   * 确保还有空间容纳num个更多的triplet，即还有3 * num个item
    */
   private int ensureCapacity(int num) {
     assert this.triplets != null : "BlockInfo is not initialized";
-    int last = numNodes();
+    int last = numNodes(); // 已经有多少个有效的DataNodeStorageInfo了
     if (triplets.length >= (last+num)*3) {
       return last;
     }
@@ -106,7 +107,7 @@ public class BlockInfoContiguous extends BlockInfo {
   public int numNodes() {
     assert this.triplets != null : "BlockInfo is not initialized";
     assert triplets.length % 3 == 0 : "Malformed BlockInfo";
-
+    // 这个capacity是除以3以后的capacity
     for (int idx = getCapacity()-1; idx >= 0; idx--) {
       if (getDatanode(idx) != null) {
         return idx + 1;

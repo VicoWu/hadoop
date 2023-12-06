@@ -33,7 +33,7 @@ import org.apache.hadoop.thirdparty.com.google.common.annotations.VisibleForTest
 /**
  * A Datanode has one or more storages. A storage in the Datanode is represented
  * by this class.
- * 一个DataNodeStorageInfo只对应一个DataNode
+ * 一个DataNodeStorageInfo只对应一个DataNode，但是一个DataNode却可以有多个DataNodeStorageInfo
  */
 public class DatanodeStorageInfo {
   public static final DatanodeStorageInfo[] EMPTY_ARRAY = {};
@@ -124,7 +124,9 @@ public class DatanodeStorageInfo {
   private volatile long remaining;
   private long blockPoolUsed;
 
+  // 这个虽然叫blockList，但是由于并不是用Java的Collection集合，而是自己维护的数组，因此blockList只是这个数组的header
   private volatile BlockInfo blockList = null;
+
   private int numBlocks = 0;
 
   /** The number of block reports received */
@@ -261,7 +263,7 @@ public class DatanodeStorageInfo {
 
     // add to the head of the data-node list
     // 把BlockInfo b 添加到this(DataNodeStorageInfo中去)
-    b.addStorage(this, reportedBlock);
+    b.addStorage(this, reportedBlock); // 先更新这个Replica的Storage信息
     insertToList(b);// 设置这个block在this(当前的这个DataNodeStorageInfo)中的信息
     return result;
   }
@@ -270,6 +272,11 @@ public class DatanodeStorageInfo {
     return addBlock(b, b);
   }
 
+  /**
+   * this指的是当前的DatanodeStorageInfo， b是新的replica所对应的BlockInfo， blockList是this.blockList，即
+   * 当前这个DatanodeStorageInfo上的BlockInfo链表的头结点
+   * @param b
+   */
   public void insertToList(BlockInfo b) {
     blockList = b.listInsert(blockList, this); // 把当前节点插入到head的前面
     numBlocks++;

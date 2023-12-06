@@ -177,7 +177,7 @@ class FSDirWriteFileOp {
       return null;
     }
 
-    final INodeFile pendingFile = fileState.inode;
+    final INodeFile pendingFile = fileState.inode; // 校验文件块的状态，比如倒数第二个文件块是否已经complete或者committed了
     if (!fsn.checkFileProgress(src, pendingFile, false)) {
       throw new NotReplicatedYetException("Not replicated yet: " + src);
     }
@@ -250,6 +250,7 @@ class FSDirWriteFileOp {
     }
 
     // commit the last block and complete it if it has minimum replicas
+    // commit上一个block
     fsn.commitOrCompleteLastBlock(pendingFile, fileState.iip,
                                   ExtendedBlock.getLocalBlock(previous));
 
@@ -727,18 +728,20 @@ class FSDirWriteFileOp {
     }
     // Check the state of the penultimate block. It should be completed
     // before attempting to complete the last one.
+    // 先确保倒数第二个块已经关闭
     if (!fsn.checkFileProgress(src, pendingFile, false)) {
       return false;
     }
 
     // commit the last block and complete it if it has minimum replicas
-    fsn.commitOrCompleteLastBlock(pendingFile, iip, last);
-
+    fsn.commitOrCompleteLastBlock(pendingFile, iip, last); // 然后commit最后一个块
+    // 文件的最后一个block还没有replicated
+    // 再确保最后一个块关闭
     if (!fsn.checkFileProgress(src, pendingFile, true)) {
       return false;
     }
-
-    fsn.addCommittedBlocksToPending(pendingFile);
+    //对于已经commit但是还没有complete的block，加入到 pendingReconstruction中去
+    fsn.addCommittedBlocksToPending(pendingFile); // 如果这个文件的block有只是处于commit但是还没有complete，那么就加入到pendingConstruction
 
     fsn.finalizeINodeFileUnderConstruction(src, pendingFile,
         Snapshot.CURRENT_STATE_ID, true);

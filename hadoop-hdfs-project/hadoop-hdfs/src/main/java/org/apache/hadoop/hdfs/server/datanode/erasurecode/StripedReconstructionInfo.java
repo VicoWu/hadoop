@@ -34,10 +34,12 @@ public class StripedReconstructionInfo {
 
   // source info
   private final byte[] liveIndices;
-  private final DatanodeInfo[] sources;
+  private final DatanodeInfo[] sources; //看StripedReader.init()可以看到liveIndices和sources之间的对应关系
 
   // target info
   private final byte[] targetIndices;
+  //看StripedWriter.init()可以看到targetIndices和targets之间的对应关系,所以我们看到，一个StripedReconstructionInfo对象
+  // 对应的是一个Blockgroup的恢复工作。很显然，一个blockgroup的恢复可能涉及到不止1个internal block的恢复
   private final DatanodeInfo[] targets;
   private final StorageType[] targetStorageTypes;
   private final String[] targetStorageIds;

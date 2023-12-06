@@ -81,6 +81,8 @@ public abstract class BlockInfo extends Block
    *             in the block group
    */
   public BlockInfo(short size) {
+    // // 这里的size是一个Block的replica的数量，对于continuos，一个Block的replica的数量就是副本数量，对于
+    // 纠删码，一个Block Group 的replica数量就是data unit + parity unit的数量
     this.triplets = new Object[3 * size];
     this.bcId = INVALID_INODE_ID;
     this.replication = isStriped() ? 0 : size; //replication对于stripped是无效信息
@@ -191,7 +193,8 @@ public abstract class BlockInfo extends Block
   }
 
   /**
-   * 这里capacity返回的是triplets.length / 3， 即这个block的总的副本书，即这个block group中physical block的大小而不是这个triplets的长度
+   * 这里capacity返回的是triplets.length / 3， 即这个block的总的副本数，
+   * 即这个block group中physical block的大小而不是这个triplets的长度
    * @return
    */
   public int getCapacity() {
@@ -280,15 +283,19 @@ public abstract class BlockInfo extends Block
    * If the head is null then form a new list.
    * @return current block as the new head of the list.
    *
-   * 根据当前的这个this(block)所载的DataNodeBlockInfo所维护的BlockInfoContinuous链表的头节点head，把this(block)的pre和next插入进去
+   * 根据当前的这个this(block)所载的DataNodeBlockInfo
+   * 所维护的BlockInfoContinuous链表的头节点head，
+   * 把this(block)的pre和next插入进去
+   * head指的是storage中的blockList链表的头结点
    */
   BlockInfo listInsert(BlockInfo head, DatanodeStorageInfo storage) {
+    // 这个 Storage肯定在前面已经设置了Storage了，因此这里dnIndex不可能小于0
     int dnIndex = this.findStorageInfo(storage);
     assert dnIndex >= 0 : "Data node is not found: current";
     assert getPrevious(dnIndex) == null && getNext(dnIndex) == null :
         "Block is already in the list and cannot be inserted.";
     this.setPrevious(dnIndex, null);
-    this.setNext(dnIndex, head); // next节点就是head
+    this.setNext(dnIndex, head); // next节点就是head， head的pre节点就是自己
     if (head != null) {
       head.setPrevious(head.findStorageInfo(storage), this);// 把head节点的pre设置为当前的BlockInfoContinous节点
     }

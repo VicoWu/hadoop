@@ -42,6 +42,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * These commands would be issued from Namenode as part of Datanode's heart beat
  * response. BPOfferService delegates the work to this class for handling EC
  * commands.
+ *
+ * 注意和NameNode端的ErasureCodingWork区分开
  */
 @InterfaceAudience.Private
 public final class ErasureCodingWorker {
@@ -120,6 +122,7 @@ public final class ErasureCodingWorker {
    */
   public void processErasureCodingTasks(
       Collection<BlockECReconstructionInfo> ecTasks) {
+    // 对于每一个重构的task
     for (BlockECReconstructionInfo reconInfo : ecTasks) {
       try {
         StripedReconstructionInfo stripedReconInfo =

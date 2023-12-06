@@ -825,7 +825,7 @@ public class DFSInputStream extends FSInputStream
     while (true) {
       // retry as many times as seekToNewSource allows.
       try {
-        // 根据已经创建好的Stratege读取某一个block，这个block所在机器上的blockReader已经创建好了
+        // 根据已经创建好的Strategy读取某一个block，这个block所在机器上的blockReader已经创建好了
         return reader.readFromBlock(blockReader, len);
       } catch (ChecksumException ce) {
         DFSClient.LOG.warn("Found Checksum error for "
@@ -834,6 +834,7 @@ public class DFSInputStream extends FSInputStream
         ioe = ce;
         retryCurrentNode = false;
         // we want to remember which block replicas we have tried
+        // 这个CORRUPT Block将会汇报给NameNode，然后replica的状态会被标记为corrupt
         corruptedBlocks.addCorruptedBlock(getCurrentBlock(), currentNode);
       } catch (IOException e) {
         if (!retryCurrentNode) {

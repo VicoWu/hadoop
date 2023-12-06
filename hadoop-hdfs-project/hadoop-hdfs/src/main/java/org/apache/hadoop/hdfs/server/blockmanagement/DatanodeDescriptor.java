@@ -195,6 +195,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
   private long bandwidth;
 
   /** A queue of blocks to be replicated by this datanode */
+  // 需要进行replica的block
   private final BlockQueue<BlockTargetPair> replicateBlocks =
       new BlockQueue<>();
   /** A queue of blocks to be erasure coded by this datanode */
@@ -651,7 +652,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
    * Store block replication work.
    */
   @VisibleForTesting
-  public void addBlockToBeReplicated(Block block,
+  public void addBlockToBeReplicated(Block block, // 这个block是internal block
       DatanodeStorageInfo[] targets) {
     assert(block != null && targets != null && targets.length > 0);
     replicateBlocks.offer(new BlockTargetPair(block, targets));
@@ -664,6 +665,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
       DatanodeDescriptor[] sources, DatanodeStorageInfo[] targets,
       byte[] liveBlockIndices, ErasureCodingPolicy ecPolicy) {
     assert (block != null && sources != null && sources.length > 0);
+    // 构造这个BlockECReconstructionInfo的block是一个block group，即我还不知道需要对哪个internal block进行重算
     BlockECReconstructionInfo task = new BlockECReconstructionInfo(block,
         sources, targets, liveBlockIndices, ecPolicy);
     erasurecodeBlocks.offer(task);
@@ -697,6 +699,7 @@ public class DatanodeDescriptor extends DatanodeInfo {
 
   /**
    * The number of work items that are pending to be replicated.
+   * 这里只是针对复制任务
    */
   int getNumberOfBlocksToBeReplicated() {
     return pendingReplicationWithoutTargets + replicateBlocks.size();

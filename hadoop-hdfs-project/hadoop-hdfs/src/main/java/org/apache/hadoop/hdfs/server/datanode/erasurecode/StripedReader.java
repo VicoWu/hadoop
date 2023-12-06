@@ -106,7 +106,7 @@ class StripedReader {
         / stripedReconInfo.getEcPolicy().getCellSize() + 1);
     minRequiredSources = Math.min(cellsNum, dataBlkNum); // minRequiredSources可能等于data block的数量，有可能等于当前这个stripe的cell数量
 
-    if (minRequiredSources < dataBlkNum) {
+    if (minRequiredSources < dataBlkNum) { // cellNum小于dataBlkNum，说明这个block group的总的数据量甚至都没有一个stripe那么多，这往往是一个文件的最后一个Block Group
       int zeroStripNum = dataBlkNum - minRequiredSources;
       zeroStripeBuffers = new ByteBuffer[zeroStripNum];
       zeroStripeIndices = new short[zeroStripNum];
@@ -124,7 +124,7 @@ class StripedReader {
     assert sources != null;
 
     readers = new ArrayList<>(sources.length);
-    readService = reconstructor.createReadService();
+    readService = reconstructor.createReadService(); //用来进行并发读取的StripedBlockReader的线程池
 
     Preconditions.checkArgument(liveIndices.length >= minRequiredSources,
         "No enough live striped blocks.");
@@ -150,13 +150,13 @@ class StripedReader {
     successList = new int[minRequiredSources];
 
     StripedBlockReader reader;
-    int nSuccess = 0;
+    int nSuccess = 0; // 我们有sources.length个reader，但是实际上我们只需要minRequiredSources个reader
     for (int i = 0; i < sources.length && nSuccess < minRequiredSources; i++) {
-      reader = createReader(i, 0);
+      reader = createReader(i, 0); // offset都是0，因为每一个reader都是从自己负责的replica的0的位置开始读取
       readers.add(reader);
       if (reader.getBlockReader() != null) { // 连接已经建立好了
         initOrVerifyChecksum(reader);
-        successList[nSuccess++] = i;
+        successList[nSuccess++] = i; //successList[nSuccess++]存放了readers数组的索引
       }
     }
 
@@ -203,7 +203,7 @@ class StripedReader {
     return reconstructor.allocateBuffer(getBufferSize());
   }
 
-  private void initZeroStrip() {
+  private void initZeroStrip() { // 即使不创建对应的Reader，也会分配buffer，以便进行decode操作
     if (zeroStripeBuffers != null) {
       for (int i = 0; i < zeroStripeBuffers.length; i++) {
         zeroStripeBuffers[i] = reconstructor.allocateBuffer(bufferSize);
@@ -296,7 +296,8 @@ class StripedReader {
      * Read from minimum source DNs required, the success list contains
      * source DNs which we think best.
      */
-    for (int i = 0; i < minRequiredSources; i++) {
+    // 只需要真正的从minRequiredSources个reader中读取数据，剩下的则直接向buffer中填充0
+    for (int i = 0; i < minRequiredSources; i++) { // 最小的reader数量中的每一个reader都要去读数据
       StripedBlockReader reader = readers.get(successList[i]);// successList[i]代表对应的需要从中拉取数据的block，readers.get将获取这个block对应的StripedBlockReader
       int toRead = getReadLength(liveIndices[successList[i]],
           reconstructLength);
@@ -313,11 +314,11 @@ class StripedReader {
       usedFlag.set(successList[i]);
     }
 
-    while (!futures.isEmpty()) {
+    while (!futures.isEmpty()) { // 一直循环等待futures清空
       try {
         StripingChunkReadResult result =
             StripedBlockUtil.getNextCompletedStripedRead(
-                readService, futures, stripedReadTimeoutInMills);
+                readService, futures, stripedReadTimeoutInMills); // 每次取出一个成功的Future，即一个Replica的读取结果，这个结果有可能是成功，有可能是超时，有可能是失败
         int resultIndex = -1;
         if (result.state == StripingChunkReadResult.SUCCESSFUL) {
           resultIndex = result.index;
@@ -334,7 +335,7 @@ class StripedReader {
               reconstructLength, corruptedBlocks);
         }
         if (resultIndex >= 0) {
-          newSuccess[nSuccess++] = resultIndex;
+          newSuccess[nSuccess++] = resultIndex; // 记录这个成功的读取，如果成功数量足够了，则这一轮结束
           if (nSuccess >= minRequiredSources) {
             // cancel remaining reads if we read successfully from minimum
             // number of source DNs required by reconstruction.

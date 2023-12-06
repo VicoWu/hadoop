@@ -161,12 +161,15 @@ class StripedBlockWriter {
 
   /**
    * Send data to targets.
+   * 注意，数据是存放在targetBuffer中的，参数packetBuf只是一个中转区
    */
   void transferData2Target(byte[] packetBuf) throws IOException {
     if (targetBuffer.remaining() == 0) {
       return;
     }
 
+    // 现在数据已经存放在targetBuffer中(有可能是direct，有可能不是direct)，如果targetBuffer是direct，那么计算
+    // checksum的时候存放checksum的ByteBuffer也得是direct
     if (targetBuffer.isDirect()) {
       ByteBuffer directCheckSumBuf =
           BUFFER_POOL.getBuffer(true, stripedWriter.getChecksumBuf().length);
@@ -174,8 +177,8 @@ class StripedBlockWriter {
           targetBuffer, directCheckSumBuf); // 对targetBuffer的数据做校验，写入directCheckSumBuf
       directCheckSumBuf.get(stripedWriter.getChecksumBuf()); // directCheckSumBuf写入到stripedWriter的buf中去
       BUFFER_POOL.putBuffer(directCheckSumBuf); //  归还directCheckSumBuf到BUFFER_POOL中
-    } else {
-      stripedWriter.getChecksum().calculateChunkedSums(
+    } else { // 如果targetBuffer不是direct，那么直接基于数组进行计算
+      stripedWriter.getChecksum().calculateChunkedSums( // 只有在非direct(即存放在heap中)的情况下array()方法才会有返回值
           targetBuffer.array(), 0, targetBuffer.remaining(),
           stripedWriter.getChecksumBuf(), 0);
     }
@@ -189,9 +192,9 @@ class StripedBlockWriter {
       int maxBytesToPacket = stripedWriter.getMaxChunksPerPacket() // 单个packet中的chunk数量 * chunk的长度
           * stripedWriter.getBytesPerChecksum();
       int toWrite = targetBuffer.remaining() > maxBytesToPacket ?
-          maxBytesToPacket : targetBuffer.remaining(); // 发送的数据长度
+          maxBytesToPacket : targetBuffer.remaining(); // 实际发送的数据长度(不包含checksum，checksum此时是单独存放在checksumBuf中的)
       int ckLen = ((toWrite - 1) / stripedWriter.getBytesPerChecksum() + 1)
-          * stripedWriter.getChecksumSize();
+          * stripedWriter.getChecksumSize();// checksum的总长度，比如，我们需要10个checkum，每个checksum是4B,那么ckLen就是40Byte
       packet.writeChecksum(stripedWriter.getChecksumBuf(), ckOff, ckLen); // 把checksum中的数据存入packet中
       ckOff += ckLen;
       //  把inBuffer中的数据写入到Packet中去（注意并不是发送，只是写入到Packet对应的buf中）

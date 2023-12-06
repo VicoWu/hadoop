@@ -66,7 +66,7 @@ class BlocksMap {
   /** Constant {@link LightWeightGSet} capacity. */
   private final int capacity;
   
-  private GSet<Block, BlockInfo> blocks;
+  private GSet<Block, BlockInfo> blocks; // 这是一个Set，一个BlockInfo的HashSet，不是一个map
 
   private final LongAdder totalReplicatedBlocks = new LongAdder();
   private final LongAdder totalECBlockGroups = new LongAdder();
@@ -110,7 +110,7 @@ class BlocksMap {
    */
   BlockInfo addBlockCollection(BlockInfo b, BlockCollection bc) {
     BlockInfo info = blocks.get(b);
-    if (info != b) {
+    if (info != b) { // 如果找不到(info==null)或者不一致
       info = b;
       blocks.put(info);
       incrementBlockStat(info);
@@ -134,7 +134,7 @@ class BlocksMap {
     assert blockInfo.getBlockCollectionId() == INodeId.INVALID_INODE_ID;
     final int size = blockInfo.isStriped() ?
         blockInfo.getCapacity() : blockInfo.numNodes();
-    for(int idx = size - 1; idx >= 0; idx--) {
+    for(int idx = size - 1; idx >= 0; idx--) { //将这个block的每一个replica从其DatanodeStorageInfo中清除
       DatanodeDescriptor dn = blockInfo.getDatanode(idx);
       if (dn != null) {
         removeBlock(dn, blockInfo); // remove from the list and wipe the location

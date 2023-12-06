@@ -287,8 +287,7 @@ public class DataChecksum implements Checksum {
   private DataChecksum( Type type, Checksum checksum, int chunkSize ) {
     this.type = type;
     summer = checksum;
-    bytesPerChecksum = chunkSize;// 可以看到，一个chunk会生成一个checksum，以crc32为例，假如文件大小为32kb，一个chuck是4kb，那么就会生成32kb / 4kb = 8个
-    // chunk, 即有8个checksum，由于每个checksum的长度是4byte，因此会有32个byte的checksum数据
+    bytesPerChecksum = chunkSize;
   }
   
   /** @return the checksum algorithm type. */

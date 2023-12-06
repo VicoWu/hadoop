@@ -1757,6 +1757,7 @@ public class DatanodeManager {
   }
 
   /** Handle heartbeat from datanodes.
+   * NameNode端处理 dn的心跳
    *  对DN的心跳的处理，所有对datanode的相关指令都会通过心跳回复给DN,各种指令封装在DatanodeCommand[]数组中，
    *  对DatanodeCommand的实现是多种多样的
    * */
@@ -1793,6 +1794,7 @@ public class DatanodeManager {
     }
 
     // block recovery command
+    // 注意区分block recovery和block reconstruction是不同的
     final BlockRecoveryCommand brCommand = getBlockRecoveryCommand(blockPoolId,
         nodeinfo);
     if (brCommand != null) {
@@ -1845,7 +1847,7 @@ public class DatanodeManager {
           .getErasureCodeCommand(numECTasks);
       if (pendingECList != null && !pendingECList.isEmpty()) {
         cmds.add(new BlockECReconstructionCommand(
-            DNA_ERASURE_CODING_RECONSTRUCTION, pendingECList));
+            DNA_ERASURE_CODING_RECONSTRUCTION, pendingECList)); // 一个command中封装了分配给该节点的很多的BlockECReconstructionInfo,一次性交给节点
       }
     }
 

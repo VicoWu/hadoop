@@ -35,6 +35,7 @@ import java.util.BitSet;
 
 /**
  * Manage striped writers that writes to a target with reconstructed data.
+ * 有多个writer，可以看到一个StripedWriter负责一个BlockGroup 的一个或者多个internal block的恢复，下面绑定了多个StripedBlockWriter
  */
 @InterfaceAudience.Private
 class StripedWriter {
@@ -88,9 +89,13 @@ class StripedWriter {
     this.targetStorageIds = stripedReconInfo.getTargetStorageIds();
     assert targetStorageIds != null;
 
+    /**
+     * 有多个writer，可以看到一个StripedWriter负责一个BlockGroup 的一个或者多个internal block的恢复
+     * 一个StripedBlockWriter负责一个 replica的生成操作
+     */
     writers = new StripedBlockWriter[targets.length];
 
-    targetIndices = new short[targets.length];
+    targetIndices = new short[targets.length];//targetIndices数组中的每一个元素的值代表了这个target在Block Index中的索引
     Preconditions.checkArgument(targetIndices.length <= parityBlkNum,
         "Too much missed striped blocks.");
     initTargetIndices();
@@ -109,18 +114,18 @@ class StripedWriter {
 
   void init() throws IOException {
     DataChecksum checksum = reconstructor.getChecksum();
-    checksumSize = checksum.getChecksumSize();
-    bytesPerChecksum = checksum.getBytesPerChecksum();
-    int chunkSize = bytesPerChecksum + checksumSize;
-    maxChunksPerPacket = Math.max(
+    checksumSize = checksum.getChecksumSize();// 4B
+    bytesPerChecksum = checksum.getBytesPerChecksum(); // 512B
+    int chunkSize = bytesPerChecksum + checksumSize; // 516B
+    maxChunksPerPacket = Math.max( // WRITE_PACKET_SIZE是64KB,需要包含PKT_MAX_HEADER_LEN的header
         (WRITE_PACKET_SIZE - PacketHeader.PKT_MAX_HEADER_LEN) / chunkSize, 1);
     int maxPacketSize = chunkSize * maxChunksPerPacket
-        + PacketHeader.PKT_MAX_HEADER_LEN;
+        + PacketHeader.PKT_MAX_HEADER_LEN; // 最大的packet的大小
 
     packetBuf = new byte[maxPacketSize];
     int tmpLen = checksumSize *
         (reconstructor.getBufferSize() / bytesPerChecksum);
-    checksumBuf = new byte[tmpLen];
+    checksumBuf = new byte[tmpLen]; // checksum的buffer的长度
 
     if (initTargetStreams() == 0) {
       String error = "All targets are failed.";
@@ -134,9 +139,9 @@ class StripedWriter {
     int m = 0;
     hasValidTargets = false;
     for (int i = 0; i < dataBlkNum + parityBlkNum; i++) {
-      if (!bitset.get(i)) {
-        if (reconstructor.getBlockLen(i) > 0) {
-          if (m < targets.length) {
+      if (!bitset.get(i)) { // 缺数据
+        if (reconstructor.getBlockLen(i) > 0) { // 的确需要数据
+          if (m < targets.length) { // 最多构造m个target
             targetIndices[m++] = (short)i;
             hasValidTargets = true;
           }
@@ -272,7 +277,7 @@ class StripedWriter {
   }
 
   /**
-   * 由于chunk就是checksum的基本单位，因此bytesPerChecksum就是一个chunk中的数据长度
+   * 由于chunk就是checksum的基本单位，因此bytesPerChecksum就是一个chunk中的数据部分(不包括4byte的checksum)长度
    * @return
    */
   int getBytesPerChecksum() {

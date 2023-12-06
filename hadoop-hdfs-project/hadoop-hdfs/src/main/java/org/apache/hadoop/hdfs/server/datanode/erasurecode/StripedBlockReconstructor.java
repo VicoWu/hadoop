@@ -43,7 +43,7 @@ class StripedBlockReconstructor extends StripedReconstructor
       StripedReconstructionInfo stripedReconInfo) {
     super(worker, stripedReconInfo);
 
-    stripedWriter = new StripedWriter(this, getDatanode(),
+    stripedWriter = new StripedWriter(this, getDatanode(),// getDatanode()指的是当前的DataNode
         getConf(), stripedReconInfo);
   }
 
@@ -54,17 +54,17 @@ class StripedBlockReconstructor extends StripedReconstructor
   @Override
   public void run() {
     try {
-      initDecoderIfNecessary();
+      initDecoderIfNecessary(); // 根据ECPolicy创建对应的decoder
 
-      initDecodingValidatorIfNecessary();
+      initDecodingValidatorIfNecessary();  // 根据ECPolicy创建对应的decoder的validator
 
-      getStripedReader().init();
+      getStripedReader().init();//初始化条带块的读取
 
-      stripedWriter.init();
+      stripedWriter.init(); //初始化条带块的写入
 
-      reconstruct();
+      reconstruct(); // 重构
 
-      stripedWriter.endTargetBlocks();
+      stripedWriter.endTargetBlocks(); // 结束
 
       // Currently we don't check the acks for packets, this is similar as
       // block replication.
@@ -104,11 +104,12 @@ class StripedBlockReconstructor extends StripedReconstructor
       long readEnd = Time.monotonicNow();
 
       // step2: decode to reconstruct targets
-      reconstructTargets(toReconstructLen);
+      reconstructTargets(toReconstructLen); // 重算，构造数据
       long decodeEnd = Time.monotonicNow();
 
       // step3: transfer data
-      if (stripedWriter.transferData2Targets() == 0) {
+      // 把数据发送给target
+      if (stripedWriter.transferData2Targets() == 0) { // 将数据发送给 target
         String error = "Transfer failed for all targets.";
         throw new IOException(error);
       }
@@ -126,8 +127,13 @@ class StripedBlockReconstructor extends StripedReconstructor
     }
   }
 
+  /**
+   * 这里有可能是encode，有可能是decode
+   * @param toReconstructLen
+   * @throws IOException
+   */
   private void reconstructTargets(int toReconstructLen) throws IOException {
-    // 从远程的source节点拉取到6个internal block
+    // 收集所有的StripedBlockReader刚刚读取的数据
     ByteBuffer[] inputs = getStripedReader().getInputBuffers(toReconstructLen);
 
     int[] erasedIndices = stripedWriter.getRealTargetIndices();

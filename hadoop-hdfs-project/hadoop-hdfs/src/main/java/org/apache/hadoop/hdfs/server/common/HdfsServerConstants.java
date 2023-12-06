@@ -282,7 +282,7 @@ public interface HdfsServerConstants {
 
   /**
    * Block replica states, which it can go through while being constructed.
-   * 区分ReplicaState和BlockUCState
+   * 区分ReplicaState和BlockUCState还有StoredReplicaState
    */
   enum ReplicaState {
     /** Replica is finalized. The state when replica is not modified. */
@@ -371,6 +371,7 @@ public interface HdfsServerConstants {
      * and needs to go through a recovery procedure, 
      * which synchronizes the existing replicas contents.
      */
+    // 这个Block的写失败了，正在进行Recover操作
     UNDER_RECOVERY,
     /**
      * The block is committed.<br>
@@ -379,6 +380,7 @@ public interface HdfsServerConstants {
      * {@link ReplicaState#FINALIZED} 
      * replicas has yet been reported by data-nodes themselves.
      */
+    //
     COMMITTED //  客户端已经写完了，但是还没有DataNode收到确认的汇报，这个状态较COMPLETE要更早
   }
   

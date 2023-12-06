@@ -73,7 +73,7 @@ abstract class BlockReconstructionWork {
     this.srcNodes = srcNodes;
     this.containingNodes = containingNodes;
     this.liveReplicaStorages = liveReplicaStorages;
-    this.additionalReplRequired = additionalReplRequired;
+    this.additionalReplRequired = additionalReplRequired; // 这个数决定了需要重构几个target，即targets数组的长度
     this.priority = priority;
     this.targets = null;
   }

@@ -352,7 +352,7 @@ public class INodeFile extends INodeWithAdditionalFields
     for (int i = 0; i < blocks.length; i++) {
       final String err = checkBlockComplete(blocks, i, numCommittedAllowed,
           minReplication);
-      if(err != null) {
+      if(err != null) { // 还有block的状态不正确
         throw new IllegalStateException(String.format("Unexpected block state: " +
             "%s, file=%s (%s), blocks=%s (i=%s)", err, this,
             getClass().getSimpleName(), Arrays.asList(blocks), i));
@@ -363,7 +363,8 @@ public class INodeFile extends INodeWithAdditionalFields
   /**
    * Check if the i-th block is COMPLETE;
    * when the i-th block is the last block, it may be allowed to be COMMITTED.
-   *
+   * 默认情况下，这个numCommittedAllowed是0，即不允许在所有block都处于complete的状态下就关闭文件
+   * 检查blocks[i]的block
    * @return null if the block passes the check;
    *              otherwise, return an error message.
    */
@@ -372,21 +373,28 @@ public class INodeFile extends INodeWithAdditionalFields
     final BlockInfo b = blocks[i];
     final BlockUCState state = b.getBlockUCState();
     if (state == BlockUCState.COMPLETE) {
-      return null;
+      return null; // 成功
     }
+    // 这个block是commit状态，只有i >= blocks.length - numCommittedAllowed的block才允许
+    // 如果blocks.length=5， numCommittedAllowed=2, 那么我可以允许index=3或者4的block是committed
+    // 如果blocks.length=1, numCommittedAllowed=0（默认）， 那么不能允许任何block是committed的状态
+
+    // 前面（blocks.length - numCommittedAllowed）个block必须是COMPLETE状态
     if (b.isStriped() || i < blocks.length - numCommittedAllowed) {
-      return b + " is " + state + " but not COMPLETE";
+      return b + " is " + state + " but not COMPLETE"; // 失败
     }
+    // 在blocks.length - numCommittedAllowed后面的block是commit的状态是允许的
     if (state != BlockUCState.COMMITTED) {
       return b + " is " + state + " but neither COMPLETE nor COMMITTED";
     }
+    // 处于（blocks.length - numCommittedAllowed）后面并且状态是 committed的状态是允许的
     final int numExpectedLocations
         = b.getUnderConstructionFeature().getNumExpectedLocations();
     if (numExpectedLocations <= minReplication) {
       return b + " is " + state + " but numExpectedLocations = "
           + numExpectedLocations + " <= minReplication = " + minReplication;
     }
-    return null;
+    return null;//成功，可以close文件，或者可以写入下一个block了
   }
 
   @Override // BlockCollection
@@ -650,7 +658,7 @@ public class INodeFile extends INodeWithAdditionalFields
   /** @return the blocks of the file. */
   @Override // BlockCollection
   public BlockInfo[] getBlocks() {
-    return this.blocks;
+    return this.blocks; // 这里返回的是LogicalBlock
   }
 
   /** @return blocks of the file corresponding to the snapshot. */

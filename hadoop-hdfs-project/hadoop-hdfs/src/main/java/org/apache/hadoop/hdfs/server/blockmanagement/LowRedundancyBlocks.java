@@ -226,6 +226,12 @@ class LowRedundancyBlocks implements Iterable<BlockInfo> {
     }
   }
 
+  /**
+   * @param curReplicas 当前live的replica
+   * @param readOnlyReplicas 处在READONLY状态的replica,
+   * @param outOfServiceReplicas 指的是状态处在MAINTENANCE_NOT_FOR_READ ||  MAINTENANCE_FOR_READ || DECOMMISSIONED || DECOMMISSIONING的replica
+   * @param expectedReplicas 预期的replica数量，比如我们配置的文件副本数量为3
+   */
   private int getPriorityContiguous(int curReplicas, int readOnlyReplicas,
       int outOfServiceReplicas, int expectedReplicas) {
     if (curReplicas == 0) {
@@ -257,11 +263,10 @@ class LowRedundancyBlocks implements Iterable<BlockInfo> {
 
   /**
    * 获取这个low redundancy block的Priority，以放入对应的priority队列中去
-   * @param curReplicas
-   * @param outOfServiceReplicas
-   * @param dataBlkNum
-   * @param parityBlkNum
-   * @return
+   * @param curReplicas 当前live的replica的数量
+   * @param outOfServiceReplicas 指的是状态处在MAINTENANCE_NOT_FOR_READ ||  MAINTENANCE_FOR_READ || DECOMMISSIONED || DECOMMISSIONING的replica
+   * @param dataBlkNum 配置的预期的数据块的数量，比如RS(6,2)中，dataBlkNum=6
+   * @param parityBlkNum 配置的预期的校验块的数量，比如RS(6,2)中，parityBlkNum=2
    */
   private int getPriorityStriped(int curReplicas, int outOfServiceReplicas,
       short dataBlkNum, short parityBlkNum) {
@@ -534,7 +539,8 @@ class LowRedundancyBlocks implements Iterable<BlockInfo> {
       // We do not want to skip QUEUE_WITH_CORRUPT_BLOCKS because we still need
       // to look for deleted blocks if any.
       final boolean inCorruptLevel = (QUEUE_WITH_CORRUPT_BLOCKS == priority);
-      final Iterator<BlockInfo> i = priorityQueues.get(priority).getBookmark();//这个PriorityQueue的bookmark
+      // 这个PriorityQueue的bookmark，每次循环都从上一次循环的位置开始，而不是重新开始
+      final Iterator<BlockInfo> i = priorityQueues.get(priority).getBookmark();
       final List<BlockInfo> blocks = new LinkedList<>();
       if (!inCorruptLevel) { // 因为corrupt block已经没有恢复的必要了？
         blocksToReconstruct.add(blocks);
@@ -550,7 +556,7 @@ class LowRedundancyBlocks implements Iterable<BlockInfo> {
         }
       }
       for (BlockInfo bInfo : toRemove) {
-        remove(bInfo, priority);
+        remove(bInfo, priority); // 这个Block已经被系统删除了(比如，文件删除了)，因此已经不需要reconstruct了
       }
       toRemove.clear();
     }
