@@ -279,7 +279,7 @@ public class NameNodeProxiesClient {
     if (nameNodeUri == null) {
       return null;
     }
-    String host = nameNodeUri.getHost();
+    String host = nameNodeUri.getHost(); //如果是逻辑uri，这里的host就是nameservice
     String configKey = HdfsClientConfigKeys.Failover.PROXY_PROVIDER_KEY_PREFIX
         + "." + host;
     try {
@@ -316,11 +316,15 @@ public class NameNodeProxiesClient {
     Preconditions.checkNotNull(failoverProxyProvider);
     // HA case
     DfsClientConf config = new DfsClientConf(conf);
-    T proxy = (T) RetryProxy.create(xface, failoverProxyProvider,
-        RetryPolicies.failoverOnNetworkException(
-            RetryPolicies.TRY_ONCE_THEN_FAIL, config.getMaxFailoverAttempts(),
-            config.getMaxRetryAttempts(), config.getFailoverSleepBaseMillis(),
-            config.getFailoverSleepMaxMillis()));
+    T proxy = (T) RetryProxy.create(
+            xface,
+            failoverProxyProvider,
+            RetryPolicies.failoverOnNetworkException( // 创建对应的RetryPolicy
+                RetryPolicies.TRY_ONCE_THEN_FAIL, config.getMaxFailoverAttempts(),
+                config.getMaxRetryAttempts(), config.getFailoverSleepBaseMillis(),
+                config.getFailoverSleepMaxMillis()
+            )
+    );
 
     Text dtService;
     if (failoverProxyProvider.useLogicalURI()) {

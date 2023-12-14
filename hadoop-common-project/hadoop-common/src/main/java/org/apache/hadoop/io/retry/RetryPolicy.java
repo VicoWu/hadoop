@@ -68,9 +68,9 @@ public interface RetryPolicy {
     
     public enum RetryDecision {
       // Ordering: FAIL < RETRY < FAILOVER_AND_RETRY.
-      FAIL,
-      RETRY,
-      FAILOVER_AND_RETRY
+      FAIL, // 最终失败
+      RETRY, //重试但是不Failover
+      FAILOVER_AND_RETRY // 以failover的方式重试
     }
   }
   

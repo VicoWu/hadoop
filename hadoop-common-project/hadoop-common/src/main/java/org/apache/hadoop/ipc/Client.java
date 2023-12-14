@@ -641,6 +641,16 @@ public class Client implements AutoCloseable {
       short timeoutFailures = 0;
       while (true) {
         try {
+          if (server.isUnresolved()) {
+            // Jump into the catch block. updateAddress() will re-resolve
+            // the address if this is just a temporary DNS failure. If not,
+            // it will timeout after max ipc client retries
+            throw NetUtils.wrapException(server.getHostName(),
+                    server.getPort(),
+                    null,
+                    0,
+                    new UnknownHostException());
+          }
           this.socket = socketFactory.createSocket();
           this.socket.setTcpNoDelay(tcpNoDelay);
           this.socket.setKeepAlive(true);

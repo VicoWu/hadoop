@@ -646,19 +646,21 @@ public class RetryPolicies {
      *         sleep exponentially otherwise
      */
     private long getFailoverOrRetrySleepTime(int times) {
-      return times == 0 ? 0 : 
+      return times == 0 ? 0 :
         calculateExponentialTime(delayMillis, times, maxDelayBase);
     }
-    
+
+    // 调用方： RetryInvocationHandler.newRetryInfo
     @Override
     public RetryAction shouldRetry(Exception e, int retries,
         int failovers, boolean isIdempotentOrAtMostOnce) throws Exception {
-      if (failovers >= maxFailovers) {
+      if (failovers >= maxFailovers) { // maxFailovers = 15
         return new RetryAction(RetryAction.RetryDecision.FAIL, 0,
             "failovers (" + failovers + ") exceeded maximum allowed ("
             + maxFailovers + ")");
       }
-      if (retries - failovers > maxRetries) {
+      //
+      if (retries - failovers > maxRetries) { // maxRetries=10
         return new RetryAction(RetryAction.RetryDecision.FAIL, 0, "retries ("
             + retries + ") exceeded maximum allowed (" + maxRetries + ")");
       }
@@ -669,7 +671,7 @@ public class RetryPolicies {
           e instanceof UnknownHostException ||
           e instanceof StandbyException ||
           e instanceof ConnectTimeoutException ||
-          isWrappedStandbyException(e)) {
+          isWrappedStandbyException(e)) {// 有可能是一个被RemoteException封装的StandbyException
         return new RetryAction(RetryAction.RetryDecision.FAILOVER_AND_RETRY,
             getFailoverOrRetrySleepTime(failovers));
       } else if (e instanceof RetriableException
@@ -701,10 +703,10 @@ public class RetryPolicies {
    * function of <code>retries</code>, +/- 0%-50% of that value, chosen
    * randomly.
    * 
-   * @param time the base amount of time to work with
-   * @param retries the number of retries that have so occurred so far
-   * @param cap value at which to cap the base sleep time
-   * @return an amount of time to sleep
+   * @param time 重试的基本事件单元
+   * @param retries 当前已经进行的重试次数
+   * @param cap 挤出时间的最大允许值
+   * @return 下次重试前需要sleep的时间
    */
   private static long calculateExponentialTime(long time, int retries,
       long cap) {

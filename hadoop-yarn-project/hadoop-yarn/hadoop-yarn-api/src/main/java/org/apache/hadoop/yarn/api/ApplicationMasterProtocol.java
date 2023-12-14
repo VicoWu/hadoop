@@ -46,7 +46,7 @@ import org.apache.hadoop.yarn.exceptions.YarnException;
  * and to request and obtain resources in the cluster from the
  * <code>ResourceManager</code>.</p>
  */
-@Public
+@PublicR
 @Stable
 public interface ApplicationMasterProtocol {
 
