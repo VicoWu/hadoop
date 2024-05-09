@@ -1336,6 +1336,7 @@ public class FSDirectory implements Closeable {
     final long filesRemoved;
     writeLock();
     try {
+      // 将文件路径转换成INodesInPath
       final INodesInPath inodesInPath = getINodesInPath4Write(
           normalizePath(src), false);
       if (!deleteAllowed(inodesInPath, src) ) {
@@ -1343,6 +1344,7 @@ public class FSDirectory implements Closeable {
       } else {
         List<INodeDirectory> snapshottableDirs = new ArrayList<INodeDirectory>();
         checkSnapshot(inodesInPath.getLastINode(), snapshottableDirs);
+        // 在这里进行删除操作
         filesRemoved = unprotectedDelete(inodesInPath, collectedBlocks,
             removedINodes, removedUCFiles, mtime);
         namesystem.removeSnapshottableDirs(snapshottableDirs);
@@ -1440,7 +1442,7 @@ public class FSDirectory implements Closeable {
     assert hasWriteLock();
 
     // check if target node exists
-    INode targetNode = iip.getLastINode();
+    INode targetNode = iip.getLastINode(); // 这个INodesInPath的最后一个节点
     if (targetNode == null) {
       return -1;
     }
@@ -1449,8 +1451,11 @@ public class FSDirectory implements Closeable {
     final int latestSnapshot = iip.getLatestSnapshotId();
     targetNode.recordModification(latestSnapshot);
 
+    /**
+     * 这里不会存在递归调用，只是将这个Inode从它的parent中detach掉
+     */
     // Remove the node from the namespace
-    long removed = removeLastINode(iip);
+    long removed = removeLastINode(iip); // 删除这个iip
     if (removed == -1) {
       return -1;
     }
@@ -1463,9 +1468,14 @@ public class FSDirectory implements Closeable {
     if (removed == 0) {
       return 0;
     }
-    
+    // 处理block的信息，并将处理的block的信息放到collectedBlocks中，
+    // 这些block随后会通过调用FSNamesystem.removeBlocks进行逐个删除
     // collect block and update quota
     if (!targetNode.isInLatestSnapshot(latestSnapshot)) {
+      /**
+       * 如果是目录，那么调用的是 INodeDirectory.destroyAndCollectBlocks
+       * 递归调用发生在这里
+        */
       targetNode.destroyAndCollectBlocks(collectedBlocks,
           removedINodes, removedUCFiles);
     } else {
@@ -2388,11 +2398,11 @@ public class FSDirectory implements Closeable {
   public long removeLastINode(final INodesInPath iip) {
     final int latestSnapshot = iip.getLatestSnapshotId();
     final INode last = iip.getLastINode();
-    final INodeDirectory parent = iip.getINode(-2).asDirectory();
-    if (!parent.removeChild(last, latestSnapshot)) {
+    final INodeDirectory parent = iip.getINode(-2).asDirectory();// 这个iip的父目录
+    if (!parent.removeChild(last, latestSnapshot)) { // 删除这个iip的意思就是，将这个iip从其父目录中删除
       return -1;
     }
-
+    // 删除成功
     return (!last.isInLatestSnapshot(latestSnapshot)
         && INodeReference.tryRemoveReference(last) > 0) ? 0 : 1;
   }

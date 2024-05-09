@@ -4233,8 +4233,10 @@ public class FSNamesystem implements Namesystem, FSClusterStats,
             FsAction.ALL, true, false);
       }
 
+      // 执行到这里，说明是recursive删除，或者，尽管不是recursive，但是目录是空的(或者是一个文件)
       long mtime = now();
       // Unlink the target directory from directory tree
+      // 进行删除操作，参数removedINodes和collectedBlocks会在删除过程中存方删除的inode和block
       long filesRemoved = dir.delete(src, collectedBlocks, removedINodes,
           removedUCFiles, mtime);
       if (filesRemoved < 0) {
@@ -4248,6 +4250,7 @@ public class FSNamesystem implements Namesystem, FSClusterStats,
     } finally {
       writeUnlock();
     }
+    // 递归调用收集到的所有的block，从blockmap中删除
     removeBlocks(collectedBlocks); // Incremental deletion of blocks
     collectedBlocks.clear();
 

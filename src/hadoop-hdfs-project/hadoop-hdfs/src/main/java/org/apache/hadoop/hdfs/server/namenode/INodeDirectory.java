@@ -495,7 +495,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
       }
       return sf.removeChild(this, child, latestSnapshotId);
     }
-    return removeChild(child);
+    return removeChild(child); // 这个方法并没有递归，只是先search到这个child在当前directory中的索引，然后按照索引把这个child删除
   }
   
   /** 
@@ -507,11 +507,12 @@ public class INodeDirectory extends INodeWithAdditionalFields
    * @return true if the child is removed; false if the child is not found.
    */
   public boolean removeChild(final INode child) {
+    //在这个INodeDirectory的直接child中进行二分查找
     final int i = searchChildren(child.getLocalNameBytes());
     if (i < 0) {
       return false;
     }
-
+    // 找到以后，直接从list中删除
     final INode removed = children.remove(i);
     Preconditions.checkState(removed == child);
     return true;
@@ -791,6 +792,7 @@ public class INodeDirectory extends INodeWithAdditionalFields
       sf.clear(this, collectedBlocks, removedINodes, removedUCFiles);
     }
     for (INode child : getChildrenList(Snapshot.CURRENT_STATE_ID)) {
+      // 递归调用
       child.destroyAndCollectBlocks(collectedBlocks, removedINodes,
           removedUCFiles);
     }
