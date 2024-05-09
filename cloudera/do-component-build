@@ -1,0 +1,217 @@
+#!/bin/bash
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -ex
+
+if [ -z "$GIT_REPO" ]; then
+    export HADOOP_PROTOC_CDH5_PATH=/opt/toolchain/protobuf-2.5.0/bin/protoc
+    export HADOOP_OPENSSL_101J_PATH=/opt/toolchain/openssl-1.0.1j
+
+    if [ -z "${DO_MAVEN_DEPLOY}" ]; then
+        MAVEN_INST_DEPLOY=install
+    else
+        MAVEN_INST_DEPLOY=$DO_MAVEN_DEPLOY
+    fi
+
+# FIXME: this needs to go away once we start using an actual source tarball
+    [ -f pom.xml ] || cd src
+
+    if [ ! -d build/hadoop-${FULL_VERSION}/src ]; then
+        mkdir -p build/hadoop-${FULL_VERSION}/src 
+        tar --exclude='./build/*' -cf - . | (cd build/hadoop-${FULL_VERSION}/src ; tar xf -)
+        rm -rf build/hadoop-${FULL_VERSION}/src/cloudera build/hadoop-${FULL_VERSION}/src/.git
+    fi
+
+    if [ -z "$BUNDLE_SNAPPY" ] ; then
+        BUNDLE_SNAPPY="-Dbundle.snappy=true -Drequire.snappy=true"
+        for f in /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/lib; do
+            if [ -f $f/libsnappy.so ]; then
+                BUNDLE_SNAPPY="${BUNDLE_SNAPPY} -Dsnappy.lib=$f"
+                break
+            fi
+        done
+    fi
+
+    if [ -z "${DO_MAVEN_DEPLOY}" ]; then
+        MAVEN_SSL_FLAGS="-Drequire.openssl -Dopenssl.prefix=$HADOOP_OPENSSL_101J_PATH -Dextra.libhadoop.rpath=/var/lib/hadoop/extra/native"
+    else
+        MAVEN_SSL_FLAGS=""
+    fi
+
+# Setting CAULDRON_HADOOP_PARTIAL_BUILD_0 allows us to quickly build just
+# the maven artifacts needed by many targets that depend on hadoop. Setting
+# CAULDRON_HADOOP_PARTIAL_BUILD_1 causes this script to skip building these
+# maven artifacts (it's assumed that they have already been built) and proceed
+# to building MR1 immediately. However, to build everything in hadoop, this
+# script has to be invoked again, with both variables unset.
+
+    if [ -n "${CAULDRON_HADOOP_PARTIAL_BUILD_1}" ]; then
+      echo "CAULDRON_HADOOP_PARTIAL_BUILD_1 is set: skipping Stage 0"
+    else
+      echo "Stage 0: building Hadoop maven artifacts"
+
+      if [ -z "${CAULDRON_NO_NATIVE_BUILD}" ]; then
+        P_NATIVE="-Pnative"
+      else
+        P_NATIVE=""
+      fi
+
+# Build artifacts
+      if [ -n "${CAULDRON_HADOOP_PARTIAL_BUILD_0}" ]; then
+        echo "CAULDRON_HADOOP_PARTIAL_BUILD_0 is set; will skip generating javadocs and building MR1"
+        MAVEN_SKIP_JAVADOC="-Dmaven.javadoc.skip=true"
+      elif [ -n "${CAULDRON_SKIP_JAVADOC}" ]; then
+        echo "CAULDRON_SKIP_JAVADOC is set; will skip generating javadocs"
+        MAVEN_SKIP_JAVADOC="-Dmaven.javadoc.skip=true"
+      else
+        MAVEN_SKIP_JAVADOC=""
+      fi
+      MAVEN_SKIP_TESTS="-DskipTests -DskipTest -DskipITs"
+      JAVA_OPTS="-Xmx1536m -Xms256m -XX:MaxPermSize=256m" \
+          MAVEN_OPTS="-Xmx1536m -Xms256m -XX:MaxPermSize=256m" \
+          mvn $BUNDLE_SNAPPY $P_NATIVE \
+          -Pdist -Pfuse -Psrc -Dtar -Drequire.fuse=true \
+          ${MAVEN_SSL_FLAGS} ${MAVEN_SKIP_TESTS} ${MAVEN_SKIP_JAVADOC} \
+          $MAVEN_INST_DEPLOY \
+          "$@"
+    fi
+
+    if [ -n "${CAULDRON_HADOOP_PARTIAL_BUILD_0}" ]; then
+      echo "CAULDRON_HADOOP_PARTIAL_BUILD_0 is set; skippig the rest of the build"
+      exit 0
+    fi
+
+    echo "Stage 1: building Hadoop maven site"
+
+    if [ -z "${MAVEN_ONLY}" ]; then
+
+        JAVA_OPTS="-Xmx1536m -Xms256m -XX:MaxPermSize=256m" MAVEN_OPTS="-Xmx1536m -Xms256m -XX:MaxPermSize=256m" mvn $CAULDRON_MAVEN_EXTRA_ARGS site site:stage ${MAVEN_SKIP_TESTS} $@
+# Copy generated docs
+        mkdir -p build/hadoop-${FULL_VERSION}/share/doc/
+        cp -r target/staging/hadoop-project/* build/hadoop-${FULL_VERSION}/share/doc/
+
+# Rebuild and now mvn deploy the tarball - note the '-pl hadoop-dist' - if we chdir into hadoop-dist and build, it fails.
+
+        JAVA_OPTS="-Xmx1536m -Xms256m -XX:MaxPermSize=256m" MAVEN_OPTS="-Xmx1536m -Xms256m -XX:MaxPermSize=256m" mvn $CAULDRON_MAVEN_EXTRA_ARGS -pl hadoop-dist -Pdist -Psrc -Dtar ${MAVEN_SKIP_TESTS} -Dmaven.javadoc.skip=true -Dmaven.deploy.skip=false $MAVEN_INST_DEPLOY "$@"
+
+        (cd build/hadoop-${FULL_VERSION} ; tar --strip-components=1 -xzvf  ../../hadoop-dist/target/hadoop-${FULL_VERSION}.tar.gz)
+# (cd build/hadoop-${FULL_VERSION}/src ; tar --strip-components=1 -xzvf  ../../../hadoop-dist/target/hadoop-${FULL_VERSION}.tar.gz)
+        (cd build/hadoop-${FULL_VERSION} ; cp -r ../../cloudera .)
+
+# Create an artificial C++ example dir
+        mkdir -p build/hadoop-${FULL_VERSION}/examples/{bin,lib} || :
+        cp hadoop-tools/hadoop-pipes/target/native/*.a build/hadoop-${FULL_VERSION}/examples/lib
+        cp hadoop-tools/hadoop-pipes/target/native/examples/* build/hadoop-${FULL_VERSION}/examples/bin
+        cp -r build/hadoop-${FULL_VERSION}/include build/hadoop-${FULL_VERSION}/examples
+    fi
+
+    echo "Stage 2: building MR1"
+
+# Build MR1
+    if [ -n "${CAULDRON_BUILD}" ]; then
+      IVYSETTINGS_OVERRIDE="-Divysettings.xml=${CAULDRON_TOP_DIR}/ivysettings.xml"
+    else
+      IVYSETTINGS_OVERRIDE=""
+    fi
+
+    IVY_MIRROR_PROP=${IVY_MIRROR_PROP:-http://repo1.maven.org/maven2/}
+    IVY_EXTRA_ARGS="-Dmvnrepo=$IVY_MIRROR_PROP -Drepo.maven.org=$IVY_MIRROR_PROP ${IVYSETTINGS_OVERRIDE}"
+# Copy them into the main build directory to be included in the tarball
+    rm -rf hadoop-mapreduce1-project/build
+
+    (cd hadoop-mapreduce1-project ; ant \
+        -Dreactor.repo=file://$HOME/.m2/repository${M2_REPO_SUFFIX} \
+        -Djdiff.stable=0.20.1 \
+        -Djdiff.build.dir=build/docs/jdiff-cloudera \
+        -propertyfile build.properties -Drepo.maven.org=${IVY_MIRROR_PROP} -Dmvnrepo=${IVY_MIRROR_PROP} \
+        ${IVY_EXTRA_ARGS} \
+        -propertyfile cloudera/build.properties api-report)
+
+    MR1_VERSION=`grep '^version' hadoop-mapreduce1-project/build.properties | cut -f2 -d=`
+
+    mkdir -p hadoop-mapreduce1-project/build/hadoop-${MR1_VERSION}/docs/
+
+    (cd hadoop-mapreduce1-project ; ant \
+        -Dreactor.repo=file://$HOME/.m2/repository${M2_REPO_SUFFIX} \
+        -Dforrest.home=$FORREST_HOME \
+        -Dcompile.native=true -Dcompile.c++=true \
+        -Dhadoop.conf.dir=/etc/hadoop/conf \
+        -propertyfile cloudera/build.properties -Drepo.maven.org=${IVY_MIRROR_PROP} -Dmvnrepo=${IVY_MIRROR_PROP} \
+        ${IVY_EXTRA_ARGS} \
+        task-controller package-native tar)
+
+    mv hadoop-mapreduce1-project/build/hadoop-${MR1_VERSION} hadoop-mapreduce1-project/build/hadoop-mr1
+
+    if [ -n "$DO_MAVEN_DEPLOY" ]; then
+# Change to cloudera/maven directory, and install
+# (and if called from CDH nightly build, deploy) artifacts into Maven repository
+        (cd hadoop-mapreduce1-project/cloudera/maven-packaging ; mvn $CAULDRON_MAVEN_EXTRA_ARGS -Dnot.cdh.release.build=false $DO_MAVEN_DEPLOY)
+    fi
+
+    if [ -z "${MAVEN_ONLY}" ]; then
+# Create a manifest for the hadoop-0.20-client
+        (cd hadoop-mapreduce1-project/cloudera/maven-packaging/hadoop-client ; mvn $CAULDRON_MAVEN_EXTRA_ARGS assembly:single)
+        (cd hadoop-mapreduce1-project/cloudera/maven-packaging/hadoop-client/target/hadoop-client*/client ; ls) > hadoop-mapreduce1-project/build/hadoop-mr1/hadoop-client.list
+
+# Move MR1 bits into the final destination
+        mkdir -p build/hadoop-${FULL_VERSION}/share/hadoop/mapreduce1
+        mv build/hadoop-${FULL_VERSION}/share/hadoop/mapreduce build/hadoop-${FULL_VERSION}/share/hadoop/mapreduce2
+        ln -s mapreduce2 build/hadoop-${FULL_VERSION}/share/hadoop/mapreduce
+        mv -f hadoop-mapreduce1-project/build/hadoop-mr1/*.jar build/hadoop-${FULL_VERSION}/share/hadoop/mapreduce1
+        mv -f hadoop-mapreduce1-project/build/hadoop-mr1/lib build/hadoop-${FULL_VERSION}/share/hadoop/mapreduce1
+        mv -f hadoop-mapreduce1-project/build/hadoop-mr1/contrib build/hadoop-${FULL_VERSION}/share/hadoop/mapreduce1
+        mv -f hadoop-mapreduce1-project/build/hadoop-mr1/webapps build/hadoop-${FULL_VERSION}/share/hadoop/mapreduce1
+        mv -f hadoop-mapreduce1-project/build/hadoop-mr1/docs build/hadoop-${FULL_VERSION}/share/doc/hadoop-mapreduce1
+        mv -f hadoop-mapreduce1-project/build/hadoop-mr1/*.txt build/hadoop-${FULL_VERSION}/share/doc/hadoop-mapreduce1
+
+        mv -f hadoop-mapreduce1-project/build/hadoop-mr1/conf build/hadoop-${FULL_VERSION}/etc/hadoop-mapreduce1
+        mv -f hadoop-mapreduce1-project/build/hadoop-mr1/example-confs/conf.pseudo build/hadoop-${FULL_VERSION}/etc/hadoop-mapreduce1-pseudo
+        mv -f hadoop-mapreduce1-project/build/hadoop-mr1/example-confs/conf.secure build/hadoop-${FULL_VERSION}/etc/hadoop-mapreduce1-secure
+
+        mv -f hadoop-mapreduce1-project/build/hadoop-mr1/bin build/hadoop-${FULL_VERSION}/bin-mapreduce1
+        mv -f hadoop-mapreduce1-project/build/hadoop-mr1/sbin/* build/hadoop-${FULL_VERSION}/sbin
+        mv -f hadoop-mapreduce1-project/build/hadoop-mr1/hadoop-client.list build/hadoop-${FULL_VERSION}/cloudera/hadoop-mapreduce1-client.list
+
+        mv -f hadoop-mapreduce1-project/build/c++-examples build/hadoop-${FULL_VERSION}/examples-mapreduce1
+        cp -r hadoop-mapreduce1-project/build/c++/* build/hadoop-${FULL_VERSION}/examples-mapreduce1
+
+# Creating a convenience symlink for MR1, this has no effect on any packaging work
+# or using MR1 or MR2 from tarballs. It's just one less step you have do *if*
+# you were using MR1 from tarballs.
+        (cd build/hadoop-${FULL_VERSION}/share/hadoop/mapreduce1 && ln -s ../../../bin-mapreduce1/ bin)
+
+        BIN_EXCLUDE="--exclude=*/lib/native/lib*        \
+             --exclude=*/examples*/bin/*            \
+             --exclude=*/examples*/lib/*            \
+             --exclude=*/bin/container-executor     \
+             --exclude=*/bin/test-container-executor"
+        (cd build && tar $BIN_EXCLUDE -czf hadoop-${FULL_VERSION}.tar.gz hadoop-${FULL_VERSION})
+
+# Copy fuse output to the build directory
+        cp hadoop-hdfs-project/hadoop-hdfs/target/native/main/native/fuse-dfs/fuse_dfs build/hadoop-${FULL_VERSION}/bin/
+
+# Create a manifest for hadoop client package
+        (cd hadoop-client/target/hadoop-client-*/share/hadoop/client/lib ; ls) > build/hadoop-${FULL_VERSION}/hadoop-client.list
+
+# Create a manifest for hadoop MR1 client package
+        (cd hadoop-mapreduce1-project/cloudera/maven-packaging/hadoop-client/target/hadoop-client-*/client/ ; ls) > build/hadoop-${FULL_VERSION}/hadoop-mr1-client.list
+    fi
+else
+    git add .
+    git commit -a -m "Temporary commit for tarball"
+    mkdir -p build
+    git archive --prefix=hadoop-${FULL_VERSION}/ --format=tar HEAD |gzip > build/hadoop-${FULL_VERSION}.tar.gz
+fi
