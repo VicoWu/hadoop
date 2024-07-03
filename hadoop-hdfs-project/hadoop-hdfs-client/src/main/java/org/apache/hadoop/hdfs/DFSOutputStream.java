@@ -438,8 +438,13 @@ public class DFSOutputStream extends FSOutputSummer
   protected synchronized void writeChunk(byte[] b, int offset, int len,
       byte[] checksum, int ckoff, int cklen) throws IOException {
     writeChunkPrepare(len, ckoff, cklen);
-
+    /**
+     * 写校验数据，这里的校验数据并不是Parity，而是我们常说的checksum
+     */
     currentPacket.writeChecksum(checksum, ckoff, cklen);
+    /**
+     * 写数据本身
+     */
     currentPacket.writeData(b, offset, len);
     currentPacket.incNumChunks();
     getStreamer().incBytesCurBlock(len);// 增加往当前block中写入的byte的计数

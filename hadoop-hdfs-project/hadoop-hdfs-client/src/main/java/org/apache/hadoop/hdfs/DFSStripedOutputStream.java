@@ -612,16 +612,26 @@ public class DFSStripedOutputStream extends DFSOutputStream
     // Two extra steps are needed when a striping cell is full:
     // 1. Forward the current index pointer
     // 2. Generate parity packets if a full stripe of data cells are present
+<<<<<<< HEAD
     if (cellFull) { // cell写满了，需要将stream切到下一个
       int next = index + 1;
+=======
+    if (cellFull) {
+      int next = index + 1; // 写完了一个cell，切换到下一个cell
+>>>>>>> d7581f89471 (dfs)
       //When all data cells in a stripe are ready, we need to encode
       //them and generate some parity cells. These cells will be
       //converted to packets and put to their DataStreamer's queue.
       // 如果不是最后一个data block, 是不需要写parity chunk的
       if (next == numDataBlocks) { // 刚刚写的是这个logic group中的最后一个data block的chunk，意味着下一个chunk是写parity block的chunk
         cellBuffers.flipDataBuffers();
+<<<<<<< HEAD
         writeParityCells(); // 在写parity的过程中，stream也是在往后切换的
         next = 0;
+=======
+        writeParityCells();
+        next = 0; // 写完了所有的parity，index就从0开始重新写入
+>>>>>>> d7581f89471 (dfs)
 
         // if this is the end of the block group, end each internal block
         if (shouldEndBlockGroup()) {
@@ -641,6 +651,12 @@ public class DFSStripedOutputStream extends DFSOutputStream
         }
       }
       setCurrentStreamer(next);// 将当前stream切换到下一个，因为当前cell写满了。不写满不切换stream
+      /**
+       * 写下一个cell。其中，
+       * 如果 next != numDataBlocks, 那么这里的下一个cell就是当前stripe的下一个cell
+       * 如果next == numDataBlocks, 那么这里的下一个cell就是下一个stripe的第一个cell
+       */
+      setCurrentStreamer(next); //
     }
   }
 

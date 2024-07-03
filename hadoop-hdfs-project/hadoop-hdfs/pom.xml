@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+git <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -215,6 +215,10 @@ https://maven.apache.org/xsd/maven-4.0.0.xsd">
       <artifactId>lz4-java</artifactId>
       <scope>test</scope>
     </dependency>
+      <dependency>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-common</artifactId>
+      </dependency>
   </dependencies>
 
   <build>
