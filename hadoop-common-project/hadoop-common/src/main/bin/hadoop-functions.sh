@@ -111,7 +111,9 @@ function hadoop_add_entry
 function hadoop_verify_entry
 {
   # this unfortunately can't really be tested by bats. :(
-  # so if this changes, be aware that unit tests effectively
+  # so if this c
+  #
+  # hanges, be aware that unit tests effectively
   # do this function in them
   [[ ${!1} =~ \ ${2}\  ]]
 }
@@ -894,6 +896,7 @@ function hadoop_basic_init
   # (e.g., ssh'd in to execute a command)
   # let's get the effective username and use that
   USER=${USER:-$(id -nu)}
+  echo "HADOOP_LOG_DIR $HADOOP_LOG_DIR, HADOOP_HOME IS $HADOOP_HOME, HADOOP_LOG_FILE IS $HADOOP_LOGFILE, HADOOP_LOG_LEVEL = $HADOOP_LOGLEVEL, ROOT_LOGGER IS $HADOOP_ROOT_LOGGER, HADOOP_DAEMON_ROOT_LOGGER IS $HADOOP_DAEMON_ROOT_LOGGER"
   HADOOP_IDENT_STRING=${HADOOP_IDENT_STRING:-$USER}
   HADOOP_LOG_DIR=${HADOOP_LOG_DIR:-"${HADOOP_HOME}/logs"}
   HADOOP_LOGFILE=${HADOOP_LOGFILE:-hadoop.log}
@@ -908,6 +911,7 @@ function hadoop_basic_init
   HADOOP_SECURE_LOG_DIR=${HADOOP_SECURE_LOG_DIR:-${HADOOP_LOG_DIR}}
   HADOOP_SECURE_PID_DIR=${HADOOP_SECURE_PID_DIR:-${HADOOP_PID_DIR}}
   HADOOP_SSH_PARALLEL=${HADOOP_SSH_PARALLEL:-10}
+  echo "HADOOP_LOG_DIR $HADOOP_LOG_DIR, HADOOP_HOME IS $HADOOP_HOME, HADOOP_LOG_FILE IS $HADOOP_LOGFILE, HADOOP_LOG_LEVEL = $HADOOP_LOGLEVEL, ROOT_LOGGER IS $HADOOP_ROOT_LOGGER, HADOOP_DAEMON_ROOT_LOGGER IS $HADOOP_DAEMON_ROOT_LOGGER"
 }
 
 ## @description  Set the worker support information to the contents
@@ -1452,6 +1456,7 @@ function hadoop_os_tricks
 ## @return       may exit on failure conditions
 function hadoop_java_setup
 {
+  echo "Info in ${BASH_SOURCE[0]}:${FUNCNAME[0]}:${BASH_LINENO[0]} "
   # Bail if we did not detect it
   if [[ -z "${JAVA_HOME}" ]]; then
     hadoop_error "ERROR: JAVA_HOME is not set and could not be found."
@@ -1564,6 +1569,7 @@ function hadoop_finalize_hadoop_opts
   export HADOOP_HOME
   hadoop_add_param HADOOP_OPTS hadoop.home.dir "-Dhadoop.home.dir=${HADOOP_HOME}"
   hadoop_add_param HADOOP_OPTS hadoop.id.str "-Dhadoop.id.str=${HADOOP_IDENT_STRING}"
+  echo "in hadoop-functions, HADOOP_ROOT_LOGGER = $HADOOP_ROOT_LOGGER, HADOOP_LOG_DIR = $HADOOP_LOG_DIR, HADOOP_LOGFILE = $HADOOP_LOGFILE"
   hadoop_add_param HADOOP_OPTS hadoop.root.logger "-Dhadoop.root.logger=${HADOOP_ROOT_LOGGER}"
   hadoop_add_param HADOOP_OPTS hadoop.policy.file "-Dhadoop.policy.file=${HADOOP_POLICYFILE}"
   hadoop_add_param HADOOP_OPTS hadoop.security.logger "-Dhadoop.security.logger=${HADOOP_SECURITY_LOGGER}"

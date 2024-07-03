@@ -814,6 +814,7 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       if (chosenNode == null) {
         break;
       }
+      // 这要选择了这个节点，这个节点一定会进入excludedNodes
       Preconditions.checkState(excludedNodes.add(chosenNode), "chosenNode "
           + chosenNode + " is already in excludedNodes " + excludedNodes);
       if (LOG.isDebugEnabled() && builder != null) {

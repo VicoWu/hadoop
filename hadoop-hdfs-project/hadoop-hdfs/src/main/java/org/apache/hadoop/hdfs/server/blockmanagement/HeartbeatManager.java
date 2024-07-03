@@ -281,7 +281,7 @@ class HeartbeatManager implements DatanodeStatistics {
       node.setDecommissioned();
     } else {
       stats.subtract(node);
-      node.startDecommission();
+      node.startDecommission(); // 将DatanodeDescriptor的状态设置为DECOMMISSION_INPROGRESS
       stats.add(node);
     }
   }

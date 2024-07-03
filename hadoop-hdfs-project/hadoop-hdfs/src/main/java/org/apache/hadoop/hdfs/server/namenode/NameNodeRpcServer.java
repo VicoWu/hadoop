@@ -368,7 +368,6 @@ public class NameNodeRpcServer implements NamenodeProtocols {
           .setVerbose(false)
           .setSecretManager(namesystem.getDelegationTokenSecretManager())
           .build();
-
       // Add all the RPC protocols that the namenode implements
       DFSUtil.addPBProtocol(conf, HAServiceProtocolPB.class, haPbService,
           serviceRpcServer);

@@ -554,14 +554,14 @@ public class DFSStripedOutputStream extends DFSOutputStream
     // 1. Forward the current index pointer
     // 2. Generate parity packets if a full stripe of data cells are present
     if (cellFull) {
-      int next = index + 1;
+      int next = index + 1; // 写完了一个cell，切换到下一个cell
       //When all data cells in a stripe are ready, we need to encode
       //them and generate some parity cells. These cells will be
       //converted to packets and put to their DataStreamer's queue.
       if (next == numDataBlocks) {
         cellBuffers.flipDataBuffers();
         writeParityCells();
-        next = 0;
+        next = 0; // 写完了所有的parity，index就从0开始重新写入
 
         // if this is the end of the block group, end each internal block
         if (shouldEndBlockGroup()) {
@@ -580,7 +580,12 @@ public class DFSStripedOutputStream extends DFSOutputStream
           checkStreamerFailures(true);
         }
       }
-      setCurrentStreamer(next);
+      /**
+       * 写下一个cell。其中，
+       * 如果 next != numDataBlocks, 那么这里的下一个cell就是当前stripe的下一个cell
+       * 如果next == numDataBlocks, 那么这里的下一个cell就是下一个stripe的第一个cell
+       */
+      setCurrentStreamer(next); //
     }
   }
 

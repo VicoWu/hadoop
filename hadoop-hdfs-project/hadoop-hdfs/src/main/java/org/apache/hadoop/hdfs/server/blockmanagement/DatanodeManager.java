@@ -1222,7 +1222,7 @@ public class DatanodeManager {
             hostConfigManager.getMaintenanceExpirationTimeInMS(node);
         if (node.maintenanceNotExpired(maintenanceExpireTimeInMS)) {
           datanodeAdminManager.startMaintenance(
-              node, maintenanceExpireTimeInMS);
+              node, maintenanceExpireTimeInMS); // 这个
         } else if (hostConfigManager.isExcluded(node)) {
           datanodeAdminManager.startDecommission(node);
         } else {

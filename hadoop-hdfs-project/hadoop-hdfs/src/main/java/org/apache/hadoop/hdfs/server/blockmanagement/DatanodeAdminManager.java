@@ -368,12 +368,13 @@ public class DatanodeAdminManager {
                                NumberReplicas numberReplicas,
                                boolean isDecommission,
                                boolean isMaintenance) {
+    // 在不考虑pending的情况下，如果当前的live已经大于等于要求的副本数
     if (blockManager.hasEnoughEffectiveReplicas(block, numberReplicas, 0)) {
       // Block has enough replica, skip
       LOG.trace("Block {} does not need replication.", block);
       return true;
     }
-
+    // hasEnoughEffectiveReplicas()返回false，即，如果算上pending的，副本数小于expected数量
     final int numExpected = blockManager.getExpectedLiveRedundancyNum(block,
         numberReplicas);
     final int numLive = numberReplicas.liveReplicas();
@@ -381,27 +382,31 @@ public class DatanodeAdminManager {
     // Block is under-replicated
     LOG.trace("Block {} numExpected={}, numLive={}", block, numExpected,
         numLive);
+    // 处于decommision状态，并且期望的副本数 严格大于 存活副本数(不包含pending)
+    // 这里可以看到，对于decommsion，如果要求3副本，存活3副本，并且不是正在进行uc的文件的最后一个副本，那么isSufficient返回false
     if (isDecommission && numExpected > numLive) {
       if (bc.isUnderConstruction() && block.equals(bc.getLastBlock())) {
         // Can decom a UC block as long as there will still be minReplicas
-        if (blockManager.hasMinStorage(block, numLive)) {
+        if (blockManager.hasMinStorage(block, numLive)) { // 这个最后一个block，并且live的replica已经满足了最低副本要求
           LOG.trace("UC block {} sufficiently-replicated since numLive ({}) "
               + ">= minR ({})", block, numLive,
               blockManager.getMinStorageNum(block));
-          return true;
+          return true; // 对于一个文件的最后一个副本，这个副本正在构造，那么只要这个副本满足最小副本数，就返回True
         } else {
           LOG.trace("UC block {} insufficiently-replicated since numLive "
               + "({}) < minR ({})", block, numLive,
-              blockManager.getMinStorageNum(block));
+              blockManager.getMinStorageNum(block)); // 返回false
         }
       } else {
+        // 存活的副本数，大于等于块的默认副本数，比如系统配置3副本，并且的确存活了3副本
         // Can decom a non-UC as long as the default replication is met
         if (numLive >= blockManager.getDefaultStorageNum(block)) {
-          return true;
+          return true; // 存活副本数不小于默认副本数
         }
+        // 如果存活副本数小于默认副本数，将返回false
       }
     }
-    if (isMaintenance
+    if (isMaintenance // 处于maintenance状态，并且numLive 不小于maintenance状态下的block数量
       && numLive >= blockManager.getMinReplicationToBeInMaintenance()) {
       return true;
     }
@@ -548,7 +553,7 @@ public class DatanodeAdminManager {
       while (!pendingNodes.isEmpty() &&
           (maxConcurrentTrackedNodes == 0 ||
           outOfServiceNodeBlocks.size() < maxConcurrentTrackedNodes)) {
-        outOfServiceNodeBlocks.put(pendingNodes.poll(), null);
+        outOfServiceNodeBlocks.put(pendingNodes.poll(), null); // 这里的null代表这个节点会从头来一遍全扫描，以确定需要进行replica的block的数量
       }
     }
 
@@ -581,7 +586,7 @@ public class DatanodeAdminManager {
         final DatanodeDescriptor dn = entry.getKey();
         try {
           AbstractList<BlockInfo> blocks = entry.getValue();
-          boolean fullScan = false;
+          boolean fullScan = false; // 每次循环， fullScan为 false
           if (dn.isMaintenance() && dn.maintenanceExpired()) {
             // If maintenance expires, stop tracking it.
             stopMaintenance(dn);
@@ -592,28 +597,29 @@ public class DatanodeAdminManager {
             // The dn is IN_MAINTENANCE and the maintenance hasn't expired yet.
             continue;
           }
-          if (blocks == null) {
+          if (blocks == null) { //第一次处理这个DataNode，那么会进行一个整体扫描
             // This is a newly added datanode, run through its list to schedule
             // under-replicated blocks for replication and collect the blocks
             // that are insufficiently replicated for further tracking
             LOG.debug("Newly-added node {}, doing full scan to find " +
                 "insufficiently-replicated blocks.", dn);
-            blocks = handleInsufficientlyStored(dn);
+            blocks = handleInsufficientlyStored(dn); // 这里是完全进行一遍扫描
             outOfServiceNodeBlocks.put(dn, blocks);
-            fullScan = true;
+            fullScan = true;  // 标记位，意味着已经做完了第一次的full scan
           } else {
             // This is a known datanode, check if its # of insufficiently
             // replicated blocks has dropped to zero and if it can move
             // to the next state.
+            // Processing Decommission In Progress node 10.30.2.178:9866
             LOG.debug("Processing {} node {}", dn.getAdminState(), dn);
-            pruneReliableBlocks(dn, blocks);
+            pruneReliableBlocks(dn, blocks); // 这里会通过blocks.interator扫描在full scan的时候返回的blocks，并且每次扫描都是接着上次的进行
           }
           final boolean isHealthy = blockManager.isNodeHealthyForDecommissionOrMaintenance(dn);
           if (!isHealthy) {
             unhealthyDns.add(dn);
           }
           if (blocks.size() == 0) {
-            if (!fullScan) {
+            if (!fullScan) { // 刚刚进行的为 非full scan，并且发现blocks.size()= 0,那么可能已经完成了节点的replication
               // If we didn't just do a full scan, need to re-check with the
               // full block map.
               //
@@ -622,14 +628,14 @@ public class DatanodeAdminManager {
               // marking the datanode as DECOMMISSIONED or IN_MAINTENANCE.
               LOG.debug("Node {} has finished replicating current set of "
                   + "blocks, checking with the full block map.", dn);
-              blocks = handleInsufficientlyStored(dn);
+              blocks = handleInsufficientlyStored(dn); // 再进行一次full scan
               outOfServiceNodeBlocks.put(dn, blocks);
             }
             // If the full scan is clean AND the node liveness is okay,
             // we can finally mark as DECOMMISSIONED or IN_MAINTENANCE.
-            if (blocks.size() == 0 && isHealthy) {
+            if (blocks.size() == 0 && isHealthy) { // 经过二次扫描，还是没有新的block添加进来
               if (dn.isDecommissionInProgress()) {
-                setDecommissioned(dn);
+                setDecommissioned(dn); // decommission成功
                 toRemove.add(dn);
               } else if (dn.isEnteringMaintenance()) {
                 // IN_MAINTENANCE node remains in the outOfServiceNodeBlocks to
@@ -663,7 +669,7 @@ public class DatanodeAdminManager {
           toRemove.add(dn);
           unhealthyDns.remove(dn);
         } finally {
-          iterkey = dn;
+          iterkey = dn;// 设置checkpoint，下次循环还是从这里开始
         }
       }
 
@@ -737,9 +743,9 @@ public class DatanodeAdminManager {
      */
     private void processBlocksInternal(
         final DatanodeDescriptor datanode,
-        final Iterator<BlockInfo> it,
+        final Iterator<BlockInfo> it, // 迭代器，如果是进行full scan，那么这是DataNode的所有block的list的起始位置
         final List<BlockInfo> insufficientList,
-        boolean pruneReliableBlocks) {
+        boolean pruneReliableBlocks) { // 进行full scan的时候，pruneReliableBlocks = false
       boolean firstReplicationLog = true;
       // Low redundancy in UC Blocks only
       int lowRedundancyBlocksInOpenFiles = 0;
@@ -775,7 +781,7 @@ public class DatanodeAdminManager {
         final BlockInfo block = it.next();
         // Remove the block from the list if it's no longer in the block map,
         // e.g. the containing file has been deleted
-        if (blockManager.blocksMap.getStoredBlock(block) == null) {
+        if (blockManager.blocksMap.getStoredBlock(block) == null) { // 这个block对应的文件已经删除了
           if (pruneReliableBlocks) {
             LOG.trace("Removing unknown block {}", block);
             it.remove();
@@ -800,12 +806,12 @@ public class DatanodeAdminManager {
         boolean neededReconstruction = isDecommission ?
             blockManager.isNeededReconstruction(block, num) :
             blockManager.isNeededReconstructionForMaintenance(block, num);
-        if (neededReconstruction) {
-          if (!blockManager.neededReconstruction.contains(block) &&
-              blockManager.pendingReconstruction.getNumReplicas(block) == 0 &&
+        if (neededReconstruction) { // 的确需要reconstruction
+          if (!blockManager.neededReconstruction.contains(block) && // 这个block还没有加入到neededReconstruction中
+              blockManager.pendingReconstruction.getNumReplicas(block) == 0 && // 这个block并没有pendingReconstruction的replica
               blockManager.isPopulatingReplQueues()) {
             // Process these blocks only when active NN is out of safe mode.
-            blockManager.neededReconstruction.add(block,
+            blockManager.neededReconstruction.add(block, // 将这个block加入到neededReconstruction中，即需要进行reconstruct的列表中
                 liveReplicas, num.readOnlyReplicas(),
                 num.outOfServiceReplicas(),
                 blockManager.getExpectedRedundancyNum(block));
@@ -816,12 +822,13 @@ public class DatanodeAdminManager {
         // it might not block decommission/maintenance if it
         // has sufficient redundancy.
         if (isSufficient(block, bc, num, isDecommission, isMaintenance)) {
-          if (pruneReliableBlocks) {
-            it.remove();
+          if (pruneReliableBlocks) { // 第一次全扫描的时候，pruneReliableBlocks是false
+            // 后面的增量扫描的时候，如果isSufficient足够了，那么就从List中删除，不再进行增量扫描
+            it.remove(); // 将这个block从List中彻底删除
           }
-          continue;
+          continue; //只要isSufficient返回true，那么就不用添加到insufficientList中
         }
-
+        // 运行到这里，这个block就会添加到insufficientList中
         // We've found a block without sufficient redundancy.
         if (insufficientList != null) {
           insufficientList.add(block);

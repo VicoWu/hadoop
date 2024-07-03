@@ -107,11 +107,11 @@ public class HAUtil {
 
   /**
    * Get the namenode Id by matching the {@code addressKey}
-   * with the the address of the local node.
+   * with the the address
    * 
    * If {@link DFSConfigKeys#DFS_HA_NAMENODE_ID_KEY} is not specifically
    * configured, this method determines the namenode Id by matching the local
-   * node's address with the configured addresses. When a match is found, it
+   * node's address with theof the local node. configured addresses. When a match is found, it
    * returns the namenode Id from the corresponding configuration key.
    * 
    * @param conf Configuration

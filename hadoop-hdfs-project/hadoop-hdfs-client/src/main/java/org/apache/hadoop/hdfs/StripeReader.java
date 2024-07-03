@@ -331,7 +331,7 @@ abstract class StripeReader {
     for (int i = 0; i < dataBlkNum; i++) {
       if (alignedStripe.chunks[i] != null &&
           alignedStripe.chunks[i].state != StripingChunk.ALLZERO) {
-        if (!readChunk(targetBlocks[i], i)) {
+        if (!readChunk(targetBlocks[i], i)) { // 这个
           alignedStripe.missingChunksNum++;
         }
       }
@@ -389,7 +389,9 @@ abstract class StripeReader {
         throw new InterruptedIOException(err);
       }
     }
-
+    /**
+     * 由于存在数据的确实，因此读取的时候有一部分是Parity block，那么就需要进行解码操作
+     */
     if (alignedStripe.missingChunksNum > 0) {
       decode();
     }
