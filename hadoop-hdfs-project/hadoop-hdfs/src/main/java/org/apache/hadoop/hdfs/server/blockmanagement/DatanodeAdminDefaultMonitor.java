@@ -182,10 +182,9 @@ public class DatanodeAdminDefaultMonitor extends DatanodeAdminMonitorBase
 
   private void check() {
     final Iterator<Map.Entry<DatanodeDescriptor, AbstractList<BlockInfo>>>
-        it = new CyclicIteration<>(outOfServiceNodeBlocks,
-        iterkey).iterator();
+        it = new CyclicIteration<>(outOfServiceNodeBlocks, iterkey).iterator();
     final List<DatanodeDescriptor> toRemove = new ArrayList<>();
-
+    // 每次会检查完outOfServiceNodeBlocks中的所有的DataNode，但是每一轮对于每个节点最多检查的replica数量有上限约束
     while (it.hasNext() && !exceededNumBlocksPerCheck() && namesystem
         .isRunning()) {
       numNodesChecked++;
@@ -193,6 +192,7 @@ public class DatanodeAdminDefaultMonitor extends DatanodeAdminMonitorBase
           entry = it.next();
       final DatanodeDescriptor dn = entry.getKey();
       try {
+        // 获取挂载在这个节点上的所有Block
         AbstractList<BlockInfo> blocks = entry.getValue();
         boolean fullScan = false;
         if (dn.isMaintenance() && dn.maintenanceExpired()) {
@@ -205,15 +205,15 @@ public class DatanodeAdminDefaultMonitor extends DatanodeAdminMonitorBase
           // The dn is IN_MAINTENANCE and the maintenance hasn't expired yet.
           continue;
         }
-        if (blocks == null) {
+        if (blocks == null) { // 第一次扫描的时候，blocks是空的
           // This is a newly added datanode, run through its list to schedule
           // under-replicated blocks for replication and collect the blocks
           // that are insufficiently replicated for further tracking
           LOG.debug("Newly-added node {}, doing full scan to find " +
               "insufficiently-replicated blocks.", dn);
-          blocks = handleInsufficientlyStored(dn);
-          outOfServiceNodeBlocks.put(dn, blocks);
-          fullScan = true;
+          blocks = handleInsufficientlyStored(dn); // 获取这个节点的insufficient的block
+          outOfServiceNodeBlocks.put(dn, blocks); // 扫描出来的节点放在outOfServiceNodeBlocks中
+          fullScan = true; // 已经完成了full scan，后面不会再进行full scan，而是基于第一次scan的结果进行进一步scan
         } else {
           // This is a known datanode, check if its # of insufficiently
           // replicated blocks has dropped to zero and if it can move
@@ -221,7 +221,7 @@ public class DatanodeAdminDefaultMonitor extends DatanodeAdminMonitorBase
           LOG.debug("Processing {} node {}", dn.getAdminState(), dn);
           pruneReliableBlocks(dn, blocks);
         }
-        if (blocks.size() == 0) {
+        if (blocks.size() == 0) { // blocks != null 并且已经insufficient的replica已经全部清空
           if (!fullScan) {
             // If we didn't just do a full scan, need to re-check with the
             // full block map.
@@ -237,8 +237,8 @@ public class DatanodeAdminDefaultMonitor extends DatanodeAdminMonitorBase
           // If the full scan is clean AND the node liveness is okay,
           // we can finally mark as DECOMMISSIONED or IN_MAINTENANCE.
           final boolean isHealthy =
-              blockManager.isNodeHealthyForDecommissionOrMaintenance(dn);
-          if (blocks.size() == 0 && isHealthy) {
+              blockManager.isNodeHealthyForDecommissionOrMaintenance(dn); // 节点是健康存活的
+          if (blocks.size() == 0 && isHealthy) { // 这个节点的所有replica都已经清空完毕
             if (dn.isDecommissionInProgress()) {
               dnAdmin.setDecommissioned(dn);
               toRemove.add(dn);
@@ -291,6 +291,7 @@ public class DatanodeAdminDefaultMonitor extends DatanodeAdminMonitorBase
    */
   private void pruneReliableBlocks(final DatanodeDescriptor datanode,
                                    AbstractList<BlockInfo> blocks) {
+    // 非 full scan
     processBlocksInternal(datanode, blocks.iterator(), null, true);
   }
 
@@ -307,7 +308,7 @@ public class DatanodeAdminDefaultMonitor extends DatanodeAdminMonitorBase
       final DatanodeDescriptor datanode) {
     AbstractList<BlockInfo> insufficient = new ChunkedArrayList<>();
     processBlocksInternal(datanode, datanode.getBlockIterator(),
-        insufficient, false);
+        insufficient, false); // fullscan,从头扫描这个DataNode的所有的block，结果放到insufficient中
     return insufficient;
   }
 
@@ -329,8 +330,8 @@ public class DatanodeAdminDefaultMonitor extends DatanodeAdminMonitorBase
   private void processBlocksInternal(
       final DatanodeDescriptor datanode,
       final Iterator<BlockInfo> it,
-      final List<BlockInfo> insufficientList,
-      boolean pruneReliableBlocks) {
+      final List<BlockInfo> insufficientList, // fullscan的时候，这个list没有用到
+      boolean pruneReliableBlocks) { // fullscan的时候，pruneReliableBlocks=false
     boolean firstReplicationLog = true;
     // Low redundancy in UC Blocks only
     int lowRedundancyBlocksInOpenFiles = 0;
@@ -340,9 +341,9 @@ public class DatanodeAdminDefaultMonitor extends DatanodeAdminMonitorBase
     int lowRedundancyBlocks = 0;
     // All maintenance and decommission replicas.
     int outOfServiceOnlyReplicas = 0;
-    while (it.hasNext()) {
+    while (it.hasNext()) { // 循环遍历每一个Block
       if (insufficientList == null
-          && numBlocksCheckedPerLock >= numBlocksPerCheck) {
+          && numBlocksCheckedPerLock >= numBlocksPerCheck) { // 每次只处理指定数量的节点
         // During fullscan insufficientlyReplicated will NOT be null, iterator
         // will be DN's iterator. So should not yield lock, otherwise
         // ConcurrentModificationException could occur.
@@ -387,7 +388,7 @@ public class DatanodeAdminDefaultMonitor extends DatanodeAdminMonitorBase
       boolean isDecommission = datanode.isDecommissionInProgress();
       boolean isMaintenance = datanode.isEnteringMaintenance();
       boolean neededReconstruction = isDecommission ?
-          blockManager.isNeededReconstruction(block, num) :
+          blockManager.isNeededReconstruction(block, num) : // 有效存活副本(live)并不充足（小于required）
           blockManager.isNeededReconstructionForMaintenance(block, num);
       if (neededReconstruction) {
         if (!blockManager.neededReconstruction.contains(block) &&
@@ -400,20 +401,25 @@ public class DatanodeAdminDefaultMonitor extends DatanodeAdminMonitorBase
               blockManager.getExpectedRedundancyNum(block));
         }
       }
-
+      // 这里的逻辑是，要成功decommission一个DataNode，这个 DN上的replica，
+      // 可能只有一部分是需要reconstruction的，另外一部分是不需要reconstruction的，这个判断标准是isNeededReconstruction
+      // 先把需要reconstruction的节点进行reconstruction，
       // Even if the block is without sufficient redundancy,
       // it might not block decommission/maintenance if it
       // has sufficient redundancy.
+      // 这个Block虽然不是完全充足，但是某种程度下已经没有安全问题，此时这个节点不会加入到副本不足的列表中去
+      // 当这个DataNode的所有节点都满足了isSufficient()，那么就可以卸载这个DN了
+      // 这是一个相对宽松的要求，如果节点处在DECOMMISSION_IN_PROGRESS，那么只需要保证存活节点大于等于这个块的要求副本数，或者即使小于这个块的要求副本数，但是不小于系统的副本数
       if (dnAdmin.isSufficient(block, bc, num, isDecommission, isMaintenance)) {
-        if (pruneReliableBlocks) {
-          it.remove();
+        if (pruneReliableBlocks) { // full scan的时候，pruneReliableBlocks = false。
+          it.remove(); // 当一个节点的it都删除完了，这个节点就可以进行decommmission了
         }
         continue;
       }
-
+      // isSufficient()返回false
       // We've found a block without sufficient redundancy.
       if (insufficientList != null) {
-        insufficientList.add(block);
+        insufficientList.add(block); // 加到insufficientList中的block是必须要进行复制，否则就会阻止节点下线的那些block
       }
       // Log if this is our first time through
       if (firstReplicationLog) {

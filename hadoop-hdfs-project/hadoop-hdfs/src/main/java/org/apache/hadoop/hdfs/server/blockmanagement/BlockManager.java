@@ -1069,8 +1069,8 @@ public class BlockManager implements BlockStatsMXBean {
     if (block.isStriped()) {
       return ((BlockInfoStriped) block).getRealDataBlockNum(); // stripe block实际占用数据的块的数量
     } else {
-      return (short) Math.min(minReplicationToBeInMaintenance,
-          block.getReplication()); // 或者是replication factor, 或者是最小允许的进入MAINTENANCE状态live replica的数量
+      return (short) Math.min(minReplicationToBeInMaintenance, // 默认是1
+          block.getReplication()); // 或者是这个Block的副本数（replication factor）, 或者是最小允许的进入MAINTENANCE状态live replica的数量
     }
   }
 
@@ -2104,6 +2104,9 @@ public class BlockManager implements BlockStatsMXBean {
       NumberReplicas numReplicas, int pendingReplicaNum) {
     int required = getExpectedLiveRedundancyNum(block, numReplicas);
     int numEffectiveReplicas = numReplicas.liveReplicas() + pendingReplicaNum;
+    // 有效副本(live + pending) >= 需要的总副本数
+    //  并且
+    // 有pendingReplica，或者，虽然没有pending的，但是当前所有的placement已经满足
     return (numEffectiveReplicas >= required) &&
         (pendingReplicaNum > 0 || isPlacementPolicySatisfied(block));
   }
@@ -4838,15 +4841,30 @@ public class BlockManager implements BlockStatsMXBean {
     return placementPolicy.verifyBlockPlacement(locs, numReplicas); // 返回一个BlockPlacementStatus， 代表当前block的位置分布状态
   }
 
+  /**
+   * 在这个节点需要进入maintenance的情况下，是否有必要对这个节点上的block进行复制，
+   * 如果这个节点的存活的replica小于进入maintenance的最小副本数要求(默认是1)，或者，尽管满足进入maintenance的最小副本数要求(默认是1)，但是放置有问题
+   * @param storedBlock
+   * @param numberReplicas
+   * @return
+   */
   boolean isNeededReconstructionForMaintenance(BlockInfo storedBlock,
       NumberReplicas numberReplicas) {
     return storedBlock.isComplete() && (numberReplicas.liveReplicas() <
-        getMinMaintenanceStorageNum(storedBlock) ||
+        getMinMaintenanceStorageNum(storedBlock) || // 默认是1
         !isPlacementPolicySatisfied(storedBlock));
   }
 
+  /**
+   * 如果一个节点需要decommission，这个有必要对这个节点上的这个block进行复制，
+   * 要求是这个block的live replica大于等于(不少于)required
+   * @param storedBlock
+   * @param numberReplicas
+   * @return
+   */
   boolean isNeededReconstruction(BlockInfo storedBlock,
       NumberReplicas numberReplicas) {
+    // 不考虑pending的replica，这个block的存活replica的数量大于等于期望的副本数量(块的副本数)
     return isNeededReconstruction(storedBlock, numberReplicas, 0);
   }
 
