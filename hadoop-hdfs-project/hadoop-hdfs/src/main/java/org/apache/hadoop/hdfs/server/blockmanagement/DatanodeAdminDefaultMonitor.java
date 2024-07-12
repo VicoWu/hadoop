@@ -342,7 +342,7 @@ public class DatanodeAdminDefaultMonitor extends DatanodeAdminMonitorBase
     // All maintenance and decommission replicas.
     int outOfServiceOnlyReplicas = 0;
     while (it.hasNext()) { // 循环遍历每一个Block
-      if (insufficientList == null
+      if (insufficientList == null // 增量剪枝扫描的时候insufficientList == null
           && numBlocksCheckedPerLock >= numBlocksPerCheck) { // 每次只处理指定数量的节点
         // During fullscan insufficientlyReplicated will NOT be null, iterator
         // will be DN's iterator. So should not yield lock, otherwise
